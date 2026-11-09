@@ -145,8 +145,25 @@ cd personal-brain
 npm install
 npm run dev        :: chạy server từ src/ (dữ liệu dev tạo trong src/, đã gitignore)
 npm run check      :: kiểm tra cú pháp toàn bộ .mjs, script dashboard, JSON
+npm run smoke      :: chạy server dev ở cổng 4399, gọi mọi API, kiểm CSRF rồi tắt (--keep: giữ server chạy)
+npm test           :: check + smoke — chạy trước khi commit
+npm run db -- "SELECT …"   :: query read-only DB dev (--installed: DB đang cài, --tables, --schema <bảng>)
 install.cmd        :: cài bản đang sửa vào ~/.personal-brain
 ```
+
+Làm việc với Claude Code: `CLAUDE.md` mô tả quy tắc của repo. Trong `.claude/` có:
+
+| Loại | Tên | Dùng khi |
+| --- | --- | --- |
+| Skill | `pb-coding` | thêm tính năng: bản đồ code, công thức thêm cột DB / API / config / provider |
+| Skill | `pb-testing` | kiểm chứng thay đổi: check, smoke, kiểm dữ liệu, UI, installer |
+| Skill | `pb-bugfix` | sửa lỗi: tái hiện, khoanh vùng theo tầng, chặn tái phát |
+| Command | `/pb-check` | chạy `npm test` + xem git status |
+| Command | `/pb-feature <mô tả>` | làm tính năng end-to-end |
+| Command | `/pb-fix <lỗi>` | sửa lỗi theo quy trình |
+| Command | `/pb-db <câu hỏi / SQL>` | hỏi dữ liệu trong `brain.db` |
+| Command | `/pb-install` | test rồi cài bản đang sửa |
+| Command | `/pb-release <patch\|minor\|x.y.z>` | bump version, tag, push |
 
 Cấu trúc:
 
@@ -162,7 +179,7 @@ src/
   public/index.html    dashboard (JS thuần + SVG)
   brain.cmd            lệnh brain
   config.example.json  config mẫu
-scripts/  install.mjs, uninstall.mjs, check.mjs
+scripts/  install.mjs, uninstall.mjs, check.mjs, smoke.mjs, db.mjs
 docs/PLAN.md           kế hoạch và quyết định thiết kế
 ```
 

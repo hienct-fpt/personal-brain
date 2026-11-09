@@ -8,3 +8,4 @@ src/runs/
 src/version.json
 *.bak
 .DS_Store
+.claude/settings.local.json

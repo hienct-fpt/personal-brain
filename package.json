@@ -4,11 +4,16 @@
   "private": true,
   "description": "Local dashboard of what you did with Claude Code: projects, knowledge, AI token/cost usage",
   "type": "module",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "dev": "node --no-warnings src/server.mjs --open",
     "ingest": "node --no-warnings src/ingest.mjs",
     "check": "node scripts/check.mjs",
+    "smoke": "node --no-warnings scripts/smoke.mjs",
+    "db": "node --no-warnings scripts/db.mjs",
+    "test": "node scripts/check.mjs && node --no-warnings scripts/smoke.mjs",
     "setup": "node scripts/install.mjs",
     "uninstall-app": "node scripts/uninstall.mjs"
   },
