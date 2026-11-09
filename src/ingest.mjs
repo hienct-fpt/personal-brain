@@ -1,6 +1,5 @@
-// Ingest Claude Code transcripts + flezi-EMT data into brain.db (incremental).
+// Ingest Claude Code transcripts into brain.db (incremental).
 // Usage: node --no-warnings ingest.mjs [--full]
-import { DatabaseSync } from 'node:sqlite';
 import { createReadStream, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join, basename } from 'node:path';
@@ -154,51 +153,6 @@ function estimateMissingCosts(db) {
     cost_source = 'estimated' WHERE cost_source = 'none'`);
 }
 
-// Optional, legacy: import flezi-EMT history. Skipped (keeping previously imported rows) when disabled or EMT is gone.
-function ingestEmt(db, cfg) {
-  if (cfg.importEmt === false || !cfg.emtDir) return;
-  const dbs = join(cfg.emtDir, 'dbs');
-  if (!existsSync(dbs)) return;
-  db.exec('DELETE FROM emt; DELETE FROM savings; DELETE FROM emt_daily;');
-  const daily = new Map();
-  const ins = db.prepare('INSERT OR REPLACE INTO emt VALUES (?,?,?,?,?,?,?,?)');
-  for (const d of readdirSync(dbs)) {
-    const f = join(dbs, d, 'memory.db');
-    if (!existsSync(f)) continue;
-    try {
-      const m = new DatabaseSync(f, { readOnly: true });
-      const s = m.prepare('SELECT cwd, COUNT(*) n FROM sessions GROUP BY cwd ORDER BY n DESC LIMIT 1').get();
-      const o = m.prepare(`SELECT COUNT(*) n, SUM(type='user_prompt') p, SUM(type='tool_failure') f,
-        SUM(type='subagent_stop') a, MAX(timestamp) last FROM observations`).get();
-      const project = projectOf(s?.cwd, cfg);
-      if (!isExcluded(project, cfg)) {
-        ins.run(project, d, m.prepare('SELECT COUNT(*) n FROM sessions').get().n, o.n, o.p ?? 0, o.f ?? 0, o.a ?? 0, o.last);
-        for (const r of m.prepare('SELECT session_id, timestamp, type FROM observations').iterate()) {
-          const key = `${project}|${localDay(r.timestamp)}`;
-          const a = daily.get(key) ?? { prompts: 0, events: 0, sessions: new Set() };
-          a.events++; if (r.type === 'user_prompt') a.prompts++; a.sessions.add(r.session_id); daily.set(key, a);
-        }
-      }
-      m.close();
-    } catch (e) { console.warn('emt skip', d, e.message); }
-  }
-  const insD = db.prepare('INSERT OR REPLACE INTO emt_daily VALUES (?,?,?,?,?)');
-  for (const [key, a] of daily) { const [project, day] = key.split('|'); insD.run(project, day, a.prompts, a.events, a.sessions.size); }
-  const kf = join(dbs, 'kompressor.db');
-  if (existsSync(kf)) {
-    const k = new DatabaseSync(kf, { readOnly: true });
-    const agg = new Map();
-    for (const e of k.prepare('SELECT ts, project_dir, tokens_saved, cost_usd FROM savings_events').iterate()) {
-      const key = `${localDay(e.ts)}|${projectOf(e.project_dir, cfg)}`;
-      const a = agg.get(key) ?? { events: 0, tokens: 0, cost: 0 };
-      a.events++; a.tokens += e.tokens_saved; a.cost += e.cost_usd; agg.set(key, a);
-    }
-    k.close();
-    const insS = db.prepare('INSERT INTO savings VALUES (?,?,?,?,?)');
-    for (const [key, a] of agg) { const [day, project] = key.split('|'); insS.run(day, project, a.events, a.tokens, a.cost); }
-  }
-}
-
 // Claude Code auto-memory files (~/.claude/projects/<dir>/memory/*.md) = curated project knowledge.
 function ingestKnowledge(db, cfg, dirCwd) {
   db.exec('DELETE FROM knowledge');
@@ -220,16 +174,9 @@ function ingestKnowledge(db, cfg, dirCwd) {
   }
 }
 
-// Real paths we can match transcript-dir names against: session cwds, EMT cwds, workspace tree (depth 4).
+// Real paths we can match transcript-dir names against: session cwds, workspace tree (depth 4).
 function candidateCwds(cfg, db) {
   const out = new Set(db.prepare('SELECT DISTINCT cwd FROM sessions WHERE cwd IS NOT NULL').all().map((r) => r.cwd));
-  const dbs = join(cfg.emtDir, 'dbs');
-  if (existsSync(dbs)) for (const d of readdirSync(dbs)) {
-    const f = join(dbs, d, 'memory.db');
-    if (!existsSync(f)) continue;
-    try { const m = new DatabaseSync(f, { readOnly: true });
-      for (const r of m.prepare('SELECT DISTINCT cwd FROM sessions').all()) out.add(r.cwd); m.close(); } catch {}
-  }
   const walk = (p, depth) => {
     out.add(p);
     if (depth === 0) return;
@@ -271,7 +218,6 @@ export async function ingest({ full = false, log = console.log } = {}) {
 
   db.exec('BEGIN');
   estimateMissingCosts(db);
-  ingestEmt(db, cfg);
   ingestKnowledge(db, cfg, dirCwd);
   db.exec('COMMIT');
   const n = db.prepare('SELECT COUNT(*) n FROM sessions').get().n;

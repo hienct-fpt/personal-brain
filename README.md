@@ -135,7 +135,6 @@ flowchart LR
 | `projectDepth` | Số cấp thư mục tạo thành 1 project, ví dụ `{ "*": 1, "clients": 2 }` → `clients/acme-app` |
 | `aliases` | `[{ "match": "<regex trên cwd>", "project": "<tên>" }]` để gom thư mục tạm vào một project |
 | `exclude` | Prefix tên project không ghi nhận và không gửi lên AI |
-| `importEmt` | Import lịch sử từ flezi-EMT (`emtDir`) |
 | `port`, `refreshMinutes` | Cổng của server, chu kỳ tự đọc transcript |
 
 ## Phát triển
@@ -154,7 +153,7 @@ Cấu trúc:
 ```text
 src/
   lib.mjs              config, schema DB, che secret, đặt tên project
-  ingest.mjs           transcript (+ memory files, EMT tùy chọn) → brain.db
+  ingest.mjs           transcript + memory files → brain.db
   server.mjs           HTTP server + API
   summarize.mjs        tóm tắt project bằng provider đang chọn
   providers.mjs        Anthropic SDK, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible

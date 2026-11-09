@@ -160,7 +160,7 @@ dialog pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; }
   <div class="grow"></div>
   <input type="search" id="q" placeholder="Tìm prompt / session / knowledge…">
   <span class="status" id="status"></span>
-  <button id="refresh" title="Đọc lại transcript + EMT">↻ Cập nhật</button>
+  <button id="refresh" title="Đọc lại transcript">↻ Cập nhật</button>
 </header>
 <main id="app"></main>
 <div class="tip" id="tip"></div>
@@ -287,7 +287,6 @@ async function renderUsage() {
     <div class="tile"><div class="k">Cache hit (input)</div><div class="v">${(cacheShare * 100).toFixed(1)}%</div><div class="s">${num(T.cache_read)} token đọc từ cache</div></div>
     <div class="tile"><div class="k">Code thay đổi</div><div class="v">+${num(S.added)}</div><div class="s">−${num(S.removed)} dòng (theo cost-state)</div></div>
     <div class="tile"><div class="k">Tool lỗi</div><div class="v">${num(S.tool_errors)}</div><div class="s">${num(S.subagents)} subagent đã chạy</div></div>
-    ${u.savings.tokens ? `<div class="tile"><div class="k">EMT Kompressor tiết kiệm (lịch sử)</div><div class="v">${num(u.savings.tokens)}</div><div class="s">token · ≈ ${usd(u.savings.cost)} · ${num(u.savings.events)} lần nén</div></div>` : ''}
   </div>
   <div class="card"><h2>Chi phí theo ngày <small>chia theo model</small></h2>${legend(keys)}<div id="c-daily"></div></div>
   <div class="row">
@@ -310,7 +309,7 @@ async function renderUsage() {
   </div>
   <div class="note">Nguồn: transcript Claude Code (<code>~/.claude/projects</code>) — chi phí lấy từ <code>cost-state</code> do Claude Code tự tính theo giá API list
   (không phải hoá đơn thực nếu dùng gói subscription). ${S.est ? `${S.est} session thiếu cost-state được ước tính từ token.` : ''}
-  Chi phí theo ngày = chi phí session chia theo token của từng lượt gọi. Tiết kiệm token lấy từ <code>kompressor.db</code> của flezi-EMT.</div>`;
+  Chi phí theo ngày = chi phí session chia theo token của từng lượt gọi.</div>`;
 
   app.querySelectorAll('[data-days]').forEach((b) => b.onclick = () => { usageDays = Number(b.dataset.days); renderUsage(); });
   stackedBars($('#c-daily'), days, keys);
@@ -413,7 +412,7 @@ function cardHtml(p) {
     <div class="foot">
       <div>${sparkline(p.spark)}<div>${p.active_days_28} ngày / 28 ngày</div></div>
       <div class="grow"></div>
-      <div style="text-align:right">${ago(p.last_active)}<br>${p.sessions || p.emt_sessions} session · ${usd(p.cost)}${p.summary_at ? ' · <span class="badge ai">AI</span>' : ''}</div>
+      <div style="text-align:right">${ago(p.last_active)}<br>${p.sessions} session · ${usd(p.cost)}${p.summary_at ? ' · <span class="badge ai">AI</span>' : ''}</div>
     </div>
   </a>`;
 }
@@ -430,7 +429,7 @@ async function renderProjectDetail(name) {
   const d = await api(`/api/project?name=${encodeURIComponent(name)}`);
   const S = d.summary?.content ?? {};
   const cost = d.sessions.reduce((a, s) => a + (s.cost_usd || 0), 0);
-  const prompts = d.sessions.reduce((a, s) => a + (s.n_prompts || 0), 0) || d.emt?.prompts || 0;
+  const prompts = d.sessions.reduce((a, s) => a + (s.n_prompts || 0), 0);
   const added = d.sessions.reduce((a, s) => a + (s.lines_added || 0), 0), removed = d.sessions.reduce((a, s) => a + (s.lines_removed || 0), 0);
   const canSummarize = d.sessions.length || d.knowledge.length;
   const st = d.status ?? 'archived';
@@ -474,7 +473,7 @@ async function renderProjectDetail(name) {
     </div>
     ${S.headline ? `<div class="sum" style="margin-top:12px"><div class="headline">${esc(S.headline)}</div></div>` : ''}
     <div class="kpis">
-      <div class="kpi"><div class="v">${d.sessions.length || d.emt?.sessions || 0}</div><div class="k">session${!d.sessions.length && d.emt?.sessions ? ' (EMT)' : ''}</div></div>
+      <div class="kpi"><div class="v">${d.sessions.length}</div><div class="k">session</div></div>
       <div class="kpi"><div class="v">${prompts}</div><div class="k">prompt</div></div>
       <div class="kpi"><div class="v">${d.activity.length}</div><div class="k">ngày làm việc</div></div>
       <div class="kpi"><div class="v">${usd(cost)}</div><div class="k">chi phí AI</div></div>
@@ -489,7 +488,7 @@ async function renderProjectDetail(name) {
     </div>` : `<div class="card"><div class="muted">Chưa có tóm tắt AI cho project này. ${appState.hasKey ? '' : '(Cần <a href="#/settings">đăng ký API key</a> trước.) '}Bấm <b>✨ Tóm tắt bằng AI</b> để có bảng <b>Đang làm · Còn mở · Quyết định</b>, timeline các việc đã hoàn thành và knowledge.</div></div>`}
   <div class="split">
     <div class="card"><h2>Timeline <small>session + việc đã hoàn thành, theo tuần</small></h2>
-      ${tl ? `<div class="tl">${tl}</div>` : `<div class="muted">Transcript đã bị Claude Code dọn — chỉ còn nhịp hoạt động từ EMT (heatmap bên phải).</div>`}</div>
+      ${tl ? `<div class="tl">${tl}</div>` : `<div class="muted">Chưa có session nào.</div>`}</div>
     <div>
       <div class="card"><h2>Nhịp làm việc</h2><div id="pheat"></div></div>
       <div class="card"><h2>📚 Knowledge</h2>
@@ -595,9 +594,6 @@ async function renderSettings() {
   <div class="card">
     <h2>🗂 Nguồn dữ liệu</h2>
     <div>Nguồn chính: transcript Claude Code (<code>~/.claude/projects</code>) — prompt, file sửa, token/model, chi phí, tool lỗi, subagent.</div>
-    <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="emt" ${s.importEmt ? 'checked' : ''}>
-      Import thêm lịch sử từ flezi-EMT (<code>~/.flezi-emt</code>) — dữ liệu đã import vẫn giữ khi tắt.</label>
-    <div style="margin-top:10px"><button id="saveemt">Lưu</button> <span id="emtmsg" class="muted"></span></div>
   </div>
   </div>`;
 
@@ -631,7 +627,6 @@ async function renderSettings() {
     if (d) d.onclick = (e) => { if (confirm(`Xoá API key của ${s.providers[id].label}?`)) busy(e.target, '…', async () => { await post('/api/settings', { provider: id, clearKey: true }); await renderSettings(); status(); }); };
   });
   $('#savelang').onclick = async () => { try { await post('/api/settings', { language: $('#lang').value }); flash($('#langmsg'), '✓ Đã lưu', true); } catch (e) { flash($('#langmsg'), '✗ ' + e.message); } };
-  $('#saveemt').onclick = async () => { try { await post('/api/settings', { importEmt: $('#emt').checked }); flash($('#emtmsg'), '✓ Đã lưu', true); } catch (e) { flash($('#emtmsg'), '✗ ' + e.message); } };
 }
 
 // ---------- router / status ----------

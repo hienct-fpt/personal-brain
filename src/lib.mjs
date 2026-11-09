@@ -14,15 +14,13 @@ const DEFAULTS = {
   port: 4377,
   workspaceRoot: '~/workspace',
   claudeProjectsDir: '~/.claude/projects',
-  emtDir: '~/.flezi-emt',
-  importEmt: false,
   projectDepth: { '*': 1 },
   aliases: [],
   exclude: ['(personal-brain)'],
   costUnits: { input: 1, output: 5, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2 },
   refreshMinutes: 10,
 };
-const PATH_KEYS = ['workspaceRoot', 'claudeProjectsDir', 'emtDir'];
+const PATH_KEYS = ['workspaceRoot', 'claudeProjectsDir'];
 export const expandHome = (p) => (typeof p === 'string' && /^~(?=$|[\\/])/.test(p) ? homedir() + p.slice(1) : p);
 
 // config.json (written by the installer from config.example.json) over built-in defaults; "~" expands to the user's home.
@@ -66,18 +64,6 @@ CREATE INDEX IF NOT EXISTS ix_usage_session ON usage(session_id);
 CREATE TABLE IF NOT EXISTS model_cost (
   session_id TEXT, model TEXT, cost_usd REAL, input INTEGER, output INTEGER,
   cache_read INTEGER, cache_write INTEGER, PRIMARY KEY (session_id, model));
-
-CREATE TABLE IF NOT EXISTS savings (
-  day TEXT, project TEXT, events INTEGER, tokens_saved INTEGER, cost_usd REAL,
-  PRIMARY KEY (day, project));
-
-CREATE TABLE IF NOT EXISTS emt (
-  project TEXT, dir TEXT PRIMARY KEY, sessions INTEGER, observations INTEGER,
-  prompts INTEGER, tool_failures INTEGER, subagents INTEGER, last_ts INTEGER);
-
--- daily activity per project from EMT (covers sessions whose transcripts were cleaned up)
-CREATE TABLE IF NOT EXISTS emt_daily (
-  project TEXT, day TEXT, prompts INTEGER, events INTEGER, sessions INTEGER, PRIMARY KEY (project, day));
 
 CREATE TABLE IF NOT EXISTS knowledge (
   path TEXT PRIMARY KEY, project TEXT, name TEXT, description TEXT, content TEXT, mtime INTEGER);

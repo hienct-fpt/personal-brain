@@ -37,8 +37,6 @@ export function buildContext(db, project, cfg) {
     out.push('', '## Memory/knowledge đã lưu');
     for (const k of know) out.push(`### ${k.name} — ${k.description}`, clip(k.content, 1200));
   }
-  const emt = db.prepare('SELECT SUM(sessions) s, SUM(prompts) p, MAX(last_ts) last FROM emt WHERE project = ?').get(project);
-  if (emt?.s) out.push('', `## EMT: ${emt.s} session, ${emt.p} prompt, lần cuối ${localDay(emt.last)}`);
   return out.join('\n');
 }
 

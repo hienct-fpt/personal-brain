@@ -2,7 +2,6 @@
   "port": 4377,
   "workspaceRoot": "~/workspace",
   "claudeProjectsDir": "~/.claude/projects",
-  "emtDir": "~/.flezi-emt",
 
   "_projectDepth": "Số cấp thư mục dưới workspaceRoot tạo thành 1 project. Mặc định 1; khai báo riêng cho thư mục 'nhóm' (vd khách hàng).",
   "projectDepth": { "*": 1, "clients": 2 },
@@ -12,9 +11,6 @@
 
   "_exclude": "Project không ghi nhận và không gửi lên AI (prefix của tên project).",
   "exclude": ["(personal-brain)"],
-
-  "_importEmt": "Import lịch sử từ flezi-EMT nếu thư mục emtDir tồn tại.",
-  "importEmt": false,
 
   "ai": {
     "active": "anthropic",

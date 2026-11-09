@@ -36,9 +36,8 @@ function usage(days) {
     COALESCE(SUM(lines_added),0) added, COALESCE(SUM(lines_removed),0) removed, COUNT(DISTINCT project) projects,
     COALESCE(SUM(tool_errors),0) tool_errors, COALESCE(SUM(subagents),0) subagents
     FROM sessions WHERE ended_at >= ?`, sinceMs(days));
-  const savings = get('SELECT COALESCE(SUM(tokens_saved),0) tokens, COALESCE(SUM(cost_usd),0) cost, COALESCE(SUM(events),0) events FROM savings WHERE day >= ?', d);
   return {
-    totals, sessions: sess, savings,
+    totals, sessions: sess,
     daily: all(`SELECT day, model, SUM(cost_usd) cost, SUM(input+output+cache_read+cache_write) tokens, SUM(output) output
       FROM usage WHERE day >= ? GROUP BY day, model ORDER BY day`, d),
     byModel: all(`SELECT model, SUM(cost_usd) cost, SUM(input) input, SUM(output) output, SUM(cache_read) cache_read,
@@ -50,15 +49,12 @@ function usage(days) {
       FROM sessions WHERE ended_at >= ? ORDER BY cost_usd DESC LIMIT 12`, sinceMs(days)),
     byHour: all(`SELECT CAST(strftime('%H', ts/1000, 'unixepoch', 'localtime') AS INTEGER) hour, SUM(cost_usd) cost, COUNT(*) calls
       FROM usage WHERE day >= ? GROUP BY hour`, d),
-    savingsDaily: all('SELECT day, SUM(tokens_saved) tokens, SUM(cost_usd) cost FROM savings WHERE day >= ? GROUP BY day ORDER BY day', d),
   };
 }
 
-// Daily activity = prompts typed (transcript) merged with EMT prompt events (max per project-day, they overlap).
+// Daily activity = prompts typed per project-day (transcript).
 const ACTIVITY_SQL = `
-  SELECT project, day, MAX(p) prompts FROM (
-    SELECT project, date(ts/1000, 'unixepoch', 'localtime') day, COUNT(*) p FROM prompts GROUP BY 1, 2
-    UNION ALL SELECT project, day, prompts FROM emt_daily) GROUP BY project, day`;
+  SELECT project, date(ts/1000, 'unixepoch', 'localtime') day, COUNT(*) prompts FROM prompts GROUP BY 1, 2`;
 
 function activity(name, days = 182) {
   const from = localDay(sinceMs(days));
@@ -78,16 +74,13 @@ function statusOf(last) {
 
 function projects() {
   const rows = all(`
-    WITH names AS (SELECT project FROM sessions UNION SELECT project FROM emt UNION SELECT project FROM knowledge)
+    WITH names AS (SELECT project FROM sessions UNION SELECT project FROM knowledge)
     SELECT n.project,
       (SELECT COUNT(*) FROM sessions s WHERE s.project = n.project) sessions,
       (SELECT COALESCE(SUM(n_prompts),0) FROM sessions s WHERE s.project = n.project) prompts,
       (SELECT COALESCE(SUM(cost_usd),0) FROM sessions s WHERE s.project = n.project) cost,
       (SELECT MAX(ended_at) FROM sessions s WHERE s.project = n.project) last_session,
       (SELECT MIN(started_at) FROM sessions s WHERE s.project = n.project) first_session,
-      (SELECT MAX(last_ts) FROM emt e WHERE e.project = n.project) last_emt,
-      (SELECT MIN(day) FROM emt_daily e WHERE e.project = n.project) first_emt_day,
-      (SELECT COALESCE(SUM(sessions),0) FROM emt e WHERE e.project = n.project) emt_sessions,
       (SELECT COUNT(*) FROM knowledge k WHERE k.project = n.project) knowledge,
       (SELECT title FROM sessions s WHERE s.project = n.project ORDER BY ended_at DESC LIMIT 1) last_title,
       (SELECT generated_at FROM summaries m WHERE m.project = n.project) summary_at,
@@ -101,9 +94,8 @@ function projects() {
   }
   const cost30 = new Map(all('SELECT project, SUM(cost_usd) c FROM usage WHERE day >= ? GROUP BY project', localDay(sinceMs(30))).map((r) => [r.project, r.c]));
   for (const r of rows) {
-    r.last_active = Math.max(r.last_session ?? 0, r.last_emt ?? 0) || null;
-    r.first_active = Math.min(r.first_session ?? Infinity, r.first_emt_day ? Date.parse(r.first_emt_day) : Infinity);
-    if (!Number.isFinite(r.first_active)) r.first_active = null;
+    r.last_active = r.last_session ?? null;
+    r.first_active = r.first_session ?? null;
     r.status = statusOf(r.last_active);
     r.group = r.project.includes('/') ? r.project.split('/')[0] : null;
     const a = act.get(r.project) ?? {};
@@ -142,9 +134,6 @@ function project(name) {
     knowledge: all('SELECT name, description, content, mtime FROM knowledge WHERE project = ? ORDER BY mtime DESC', name),
     daily: all('SELECT day, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY day ORDER BY day', name),
     byModel: all('SELECT model, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY model ORDER BY cost DESC', name),
-    emt: get(`SELECT COALESCE(SUM(sessions),0) sessions, COALESCE(SUM(observations),0) observations, COALESCE(SUM(prompts),0) prompts,
-      COALESCE(SUM(tool_failures),0) tool_failures, COALESCE(SUM(subagents),0) subagents, MAX(last_ts) last FROM emt WHERE project = ?`, name),
-    savings: get('SELECT COALESCE(SUM(tokens_saved),0) tokens, COALESCE(SUM(cost_usd),0) cost FROM savings WHERE project = ?', name),
   };
 }
 
@@ -165,7 +154,7 @@ function settings() {
     return [id, { ...meta, hasKey: !!key, keyHint: keyHint(key), settings: st, ready: providerReady(id, key, st) }];
   }));
   return { active: activeProvider(c).id, ready: activeProvider(c).ready, providers, efforts: EFFORTS,
-    language: ai.language, importEmt: c.importEmt !== false };
+    language: ai.language };
 }
 
 // Merge non-secret provider settings (model, endpoint, baseUrl…) from the request.
@@ -209,7 +198,7 @@ const server = createServer(async (req, res) => {
     if (p === '/' || p === '/index.html') return send(res, 200, readFileSync(join(HOME, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
     if (p === '/api/status') return send(res, 200, { ingesting: state.ingesting, lastIngest: state.lastIngest, lastResult: state.lastResult, summarizing: [...state.summarizing], hasKey: activeProvider().ready, provider: activeProvider().id });
     if (p === '/api/settings' && req.method === 'GET') return send(res, 200, settings());
-    // body: { provider?, apiKey?, clearKey?, settings?: {model, effort, endpoint, baseUrl, apiVersion}, activate?, language?, importEmt? }
+    // body: { provider?, apiKey?, clearKey?, settings?: {model, effort, endpoint, baseUrl, apiVersion}, activate?, language? }
     if (p === '/api/settings' && req.method === 'POST') {
       const b = await readJson(req);
       const c = loadConfig();
@@ -228,7 +217,6 @@ const server = createServer(async (req, res) => {
         if (b.activate) ai.active = id;
       }
       if (typeof b.language === 'string' && b.language.trim()) ai.language = b.language.trim().slice(0, 40);
-      if (typeof b.importEmt === 'boolean') c.importEmt = b.importEmt;
       delete c.summary;
       saveConfig(c);
       return send(res, 200, settings());

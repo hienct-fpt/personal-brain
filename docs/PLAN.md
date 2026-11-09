@@ -19,7 +19,6 @@ Không làm (v1): knowledge graph, vector search, ghi màn hình, sync đa máy,
 | `remember.mjs` gọi `claude -p` cuối mỗi session | Tóm tắt **theo project, theo yêu cầu**, qua **API của provider tuỳ chọn** (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible) | Tóm tắt cả project hữu ích hơn từng session; chỉ bật khi đã đăng ký API key |
 | CLI `brain today/week/search` | **Dashboard web** `http://localhost:4377` | Cần trực quan: heatmap, timeline, biểu đồ chi phí |
 | Không dependency | 1 dependency: `@anthropic-ai/sdk` | Gọi Claude API bằng SDK chính thức |
-| flezi-EMT làm nguồn tham khảo | EMT chỉ **import lịch sử một lần** (tuỳ chọn) | Không dùng EMT về sau; observation của EMT không có nội dung, chỉ có loại sự kiện |
 
 ## 3. Nguyên tắc
 
@@ -36,7 +35,6 @@ Không làm (v1): knowledge graph, vector search, ghi màn hình, sync đa máy,
 ```mermaid
 flowchart LR
   T["~/.claude/projects/**/*.jsonl<br/>(transcript, subagents/, memory/*.md)"] --> I
-  E["~/.flezi-emt/dbs/*<br/>(tuỳ chọn, import lịch sử)"] -.-> I
   H["SessionEnd hook<br/>hook-sessionend.mjs (chạy nền)"] --> I
   I["ingest.mjs<br/>tăng dần theo chữ ký mtime/size"] --> DB[("brain.db")]
   DB --> S["server.mjs<br/>127.0.0.1:4377"]
@@ -62,8 +60,7 @@ flowchart TD
   F --> C
   C -- hết --> G["Map thư mục transcript → cwd"]
   G --> H["estimateMissingCosts<br/>(session thiếu cost-state)"]
-  H --> J["ingestEmt (nếu importEmt)"]
-  J --> K["ingestKnowledge (memory/*.md)"]
+  H --> K["ingestKnowledge (memory/*.md)"]
   K --> Z([xong])
 ```
 
@@ -113,9 +110,9 @@ sequenceDiagram
 
 ```text
 %USERPROFILE%\.personal-brain\
-├─ config.json          # gom project, alias, exclude, model/effort/ngôn ngữ tóm tắt, importEmt
+├─ config.json          # gom project, alias, exclude, model/effort/ngôn ngữ tóm tắt
 ├─ lib.mjs              # đường dẫn, config, schema DB + migration, che secret, tên project
-├─ ingest.mjs           # transcript + memory files (+ EMT tuỳ chọn) → brain.db
+├─ ingest.mjs           # transcript + memory files → brain.db
 ├─ summarize.mjs        # tóm tắt 1 project bằng provider đang chọn
 ├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
 ├─ secrets.mjs          # lưu API key theo từng provider, mã hoá Windows DPAPI
@@ -138,7 +135,6 @@ sequenceDiagram
 | `model_cost` | chi phí USD từng model trong từng session | `cost-state` |
 | `knowledge` | các file memory Claude đã lưu theo project | `~/.claude/projects/*/memory/*.md` |
 | `summaries` | tóm tắt AI theo project (JSON) + token/chi phí của lần tóm tắt | Claude API |
-| `emt`, `emt_daily`, `savings` | lịch sử EMT (hoạt động theo ngày, token Kompressor tiết kiệm) | EMT, chỉ import |
 | `ingest_state` | chữ ký mtime/size từng session để ingest tăng dần | — |
 
 **Chi phí:**
@@ -170,7 +166,7 @@ sequenceDiagram
 - Biểu đồ: chi phí theo ngày (tách theo model), theo project, theo giờ trong ngày.
 - Bảng theo model; bảng session tốn nhiều nhất. Lọc theo 7/30/90 ngày/tất cả.
 
-**⚙ Cài đặt:** đăng ký/kiểm tra/xoá API key; chọn model, effort, ngôn ngữ tóm tắt; bật/tắt import EMT.
+**⚙ Cài đặt:** đăng ký/kiểm tra/xoá API key; chọn model, effort, ngôn ngữ tóm tắt.
 
 **Tìm kiếm:** trong tiêu đề session, prompt và knowledge.
 
@@ -220,7 +216,7 @@ sequenceDiagram
 | Bước | Việc | Trạng thái |
 | --- | --- | --- |
 | 1. Kiểm tra | `node:sqlite` + FTS5 trên Node v22.19.0; định dạng transcript, `cost-state` | ✅ |
-| 2. Ingest | transcript + subagents + memory files + EMT (import), tăng dần | ✅ 70 session, đối chiếu chi phí khớp |
+| 2. Ingest | transcript + subagents + memory files, tăng dần | ✅ 70 session, đối chiếu chi phí khớp |
 | 3. Dashboard | Dự án (portfolio + chi tiết), AI usage, tìm kiếm | ✅ |
 | 4. Tóm tắt AI | 5 provider (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), khoá bằng API key, ⚙ Cài đặt | ✅ code xong — **chưa chạy thử với key thật** |
 | 5. Hook & lưu giữ | SessionEnd + `cleanupPeriodDays` 365 | ✅ đã cài — xác nhận qua `ingest-hook.log` sau session kế tiếp |
@@ -230,5 +226,4 @@ sequenceDiagram
 
 1. ~~Ngôn ngữ cho script~~ → **Node.js, toàn bộ `.mjs`** (2026-11-09).
 2. ~~Ngôn ngữ của tóm tắt~~ → **Mặc định Tiếng Việt**, đổi được trong ⚙ Cài đặt.
-3. ~~Có dùng EMT không~~ → **Không dùng về sau**; chỉ giữ lịch sử đã import (2026-11-09).
-4. Project nào cần đưa vào `exclude` (dự án khách hàng nhạy cảm, không gửi lên Claude API)?
+3. Project nào cần đưa vào `exclude` (dự án khách hàng nhạy cảm, không gửi lên Claude API)?
