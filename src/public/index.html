@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Brain</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface-1: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --accent: #F37021; --link: #034EA2; --grid: #e7e6e1;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-other: #a3a29c;
+  --seq: #2a78d6; --good: #1f8a4c; --warn: #b26b00;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --link: #6aa6f0; --grid: #2c2c29;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-other: #6d6c66;
+    --seq: #3987e5; --good: #4cc27f; --warn: #e0a030;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary); font-size: 14px; }
+header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--surface-1); border-bottom: 3px solid var(--accent); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+header h1 span { color: var(--accent); }
+nav a { padding: 6px 12px; border-radius: 6px; color: var(--text-secondary); text-decoration: none; font-weight: 600; }
+nav a.on { background: var(--surface-2); color: var(--text-primary); }
+.grow { flex: 1; }
+input[type=search] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); width: 260px; }
+button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); cursor: pointer; font: inherit; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:disabled { opacity: .55; cursor: progress; }
+.status { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.card h2 { font-size: 15px; margin: 0 0 10px; }
+.card h2 small { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; }
+.tile .v { font-size: 26px; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.tile .s { color: var(--text-muted); font-size: 12px; }
+.row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 1000px) { .row { grid-template-columns: 1fr; } }
+.filters { display: flex; gap: 6px; margin-bottom: 12px; align-items: center; }
+.filters button.on { background: var(--surface-2); border-color: var(--text-muted); font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.muted { color: var(--text-muted); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+svg text { fill: var(--text-muted); font-size: 11px; font-family: inherit; }
+svg .lbl { fill: var(--text-primary); }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.15); z-index: 20; display: none; min-width: 140px; }
+.tip b { display: block; margin-bottom: 4px; }
+.tip div { display: flex; justify-content: space-between; gap: 12px; }
+.layout { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.plist { position: sticky; top: 70px; max-height: calc(100vh - 90px); overflow: auto; padding: 8px; }
+.pitem { display: block; padding: 9px 10px; border-radius: 8px; text-decoration: none; color: inherit; border: 1px solid transparent; }
+.pitem:hover { background: var(--surface-2); }
+.pitem.on { border-color: var(--accent); background: var(--surface-2); }
+.pitem .t { font-weight: 600; word-break: break-all; }
+.pitem .m { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.pitem .last { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--surface-2); color: var(--text-secondary); margin-left: 4px; }
+.badge.ai { background: var(--accent); color: #fff; }
+.sum h3 { font-size: 13px; margin: 14px 0 6px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .03em; }
+.sum ul { margin: 0; padding-left: 20px; }
+.sum li { margin: 3px 0; line-height: 1.45; }
+.sum .headline { font-size: 15px; line-height: 1.5; padding: 10px 12px; background: var(--surface-2); border-left: 4px solid var(--accent); border-radius: 4px; }
+.sum .when { color: var(--text-muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+details { border-bottom: 1px solid var(--grid); padding: 6px 0; }
+details summary { cursor: pointer; }
+details pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--surface-2); padding: 10px; border-radius: 6px; }
+.prompt { padding: 6px 0; border-bottom: 1px solid var(--grid); white-space: pre-wrap; word-break: break-word; max-height: 7.5em; overflow: hidden; }
+.prompt .muted { font-size: 12px; }
+.empty { padding: 30px; text-align: center; color: var(--text-muted); }
+.note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+a { color: var(--link); }
+
+/* ---- projects: portfolio + detail ---- */
+:root { --heat-0: var(--surface-2); --heat-1: #dbe9fa; --heat-2: #a9cbf2; --heat-3: #6ea7e6; --heat-4: #2a78d6; --heat-5: #1a4f94; }
+@media (prefers-color-scheme: dark) { :root { --heat-1: #1f3047; --heat-2: #234a7a; --heat-3: #2f69b0; --heat-4: #3987e5; --heat-5: #8ab8f2; } }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; border: 1px solid currentColor; white-space: nowrap; }
+.st-active { color: var(--good); } .st-slowing { color: var(--warn); } .st-paused, .st-archived { color: var(--text-muted); }
+.grp { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text-secondary); background: var(--surface-2); border-radius: 4px; padding: 1px 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+.chips button { border-radius: 14px; padding: 4px 12px; font-size: 13px; }
+.chips button.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+.chips .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.pcard { display: flex; flex-direction: column; gap: 8px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-decoration: none; color: inherit; transition: border-color .15s, box-shadow .15s; }
+.pcard:hover { border-color: var(--accent); box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.pcard .top { display: flex; gap: 8px; align-items: center; }
+.pcard .name { font-weight: 700; font-size: 15px; word-break: break-all; }
+.pcard .hl { color: var(--text-secondary); font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pcard .now { font-size: 12.5px; background: var(--surface-2); border-radius: 6px; padding: 6px 8px; line-height: 1.4; }
+.pcard .now b { color: var(--text-secondary); font-weight: 600; }
+.pcard .foot { display: flex; gap: 10px; align-items: end; font-size: 12px; color: var(--text-muted); margin-top: auto; }
+.section-h { font-size: 13px; font-weight: 700; color: var(--text-secondary); margin: 6px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+.heat { display: flex; gap: 10px; overflow-x: auto; }
+.heat .wd { display: grid; grid-template-rows: 14px repeat(7, 13px); gap: 3px; font-size: 10px; color: var(--text-muted); }
+.heat .wd span { line-height: 13px; }
+.heat-legend { display: flex; gap: 3px; align-items: center; font-size: 11px; color: var(--text-muted); justify-content: flex-end; margin-top: 6px; }
+.heat-legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+.crumb { display: inline-block; margin-bottom: 10px; color: var(--text-secondary); text-decoration: none; }
+.crumb:hover { color: var(--accent); }
+.hero { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.hero h2 { font-size: 22px; margin: 2px 0 4px; word-break: break-all; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 14px; }
+.kpi { border-left: 3px solid var(--border); padding: 2px 10px; }
+.kpi .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .k { font-size: 12px; color: var(--text-muted); }
+.board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 1000px) { .board { grid-template-columns: 1fr; } }
+.col { background: var(--surface-2); border-radius: 10px; padding: 10px; }
+.col h3 { font-size: 13px; margin: 2px 4px 8px; display: flex; justify-content: space-between; }
+.col h3 span { color: var(--text-muted); font-weight: 400; }
+.item { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; line-height: 1.45; }
+.col.c-now .item { border-left: 3px solid var(--series-1); }
+.col.c-open .item { border-left: 3px solid var(--warn); }
+.col.c-dec .item { border-left: 3px solid var(--text-muted); }
+.split { display: grid; grid-template-columns: 1.25fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+.tl { position: relative; padding-left: 18px; }
+.tl::before { content: ""; position: absolute; left: 5px; top: 4px; bottom: 4px; width: 2px; background: var(--grid); }
+.tl .wk { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin: 14px 0 6px -18px; }
+.tl .wk:first-child { margin-top: 0; }
+.tl .ev { position: relative; margin: 0 0 10px; }
+.tl .ev::before { content: ""; position: absolute; left: -17px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface-1); border: 2px solid var(--series-1); }
+.tl .ev.done::before { background: var(--good); border-color: var(--good); }
+.tl .ev .d { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tl .ev .t { font-weight: 600; }
+.tl .ev .m { font-size: 12px; color: var(--text-muted); }
+.kgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.kcard { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; background: var(--surface-1); }
+.kcard:hover { border-color: var(--accent); }
+.kcard b { display: block; margin-bottom: 2px; word-break: break-all; }
+.kcard span { color: var(--text-muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.klist li { margin: 4px 0; line-height: 1.45; }
+.ftree .dir { font-weight: 600; margin-top: 8px; font-size: 13px; }
+.ftree .f { display: flex; justify-content: space-between; font-size: 12.5px; padding: 2px 0 2px 14px; color: var(--text-secondary); }
+dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); color: var(--text-primary); max-width: 760px; width: 90vw; }
+dialog pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 Personal <span>Brain</span></h1>
+  <nav><a href="#/projects" id="nav-projects">Dự án</a><a href="#/usage" id="nav-usage">AI usage</a><a href="#/settings" id="nav-settings">⚙ Cài đặt <span id="keybadge" class="badge" style="display:none;background:var(--warn);color:#fff">chưa cấu hình AI</span></a></nav>
+  <div class="grow"></div>
+  <input type="search" id="q" placeholder="Tìm prompt / session / knowledge…">
+  <span class="status" id="status"></span>
+  <button id="refresh" title="Đọc lại transcript + EMT">↻ Cập nhật</button>
+</header>
+<main id="app"></main>
+<div class="tip" id="tip"></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = (p, opt) => fetch(p, opt).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; });
+const usd = (v) => '$' + (v ?? 0).toLocaleString('en-US', { minimumFractionDigits: v < 10 ? 2 : 0, maximumFractionDigits: v < 10 ? 2 : 0 });
+const num = (v) => { v = v ?? 0; return v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : String(Math.round(v)); };
+const day = (ms) => ms ? new Date(ms).toLocaleDateString('sv-SE') : '—';
+const dt = (ms) => ms ? new Date(ms).toLocaleString('sv-SE').slice(0, 16) : '—';
+const ago = (ms) => { if (!ms) return '—'; const d = (Date.now() - ms) / 864e5; return d < 1 ? 'hôm nay' : d < 2 ? 'hôm qua' : `${Math.floor(d)} ngày trước`; };
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const shortModel = (m) => m.replace(/^claude-/, '');
+
+// Fixed model → color slot (color follows the entity, never its rank).
+const MODEL_SLOTS = ['opus', 'sonnet', 'haiku'];
+function modelColor(m) {
+  const i = MODEL_SLOTS.findIndex((k) => m.includes(k));
+  return i >= 0 ? `var(--series-${i + 1})` : 'var(--series-4)';
+}
+
+// ---------- tooltip ----------
+const tip = $('#tip');
+function showTip(e, html) { tip.innerHTML = html; tip.style.display = 'block'; moveTip(e); }
+function moveTip(e) { const w = tip.offsetWidth; tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; }
+function hideTip() { tip.style.display = 'none'; }
+function bindTips(root) {
+  root.querySelectorAll('[data-tip]').forEach((n) => {
+    n.addEventListener('mouseenter', (e) => showTip(e, n.dataset.tip));
+    n.addEventListener('mousemove', moveTip);
+    n.addEventListener('mouseleave', hideTip);
+  });
+}
+
+// ---------- charts (SVG) ----------
+// Vertical stacked bars. data: [{x, parts:{key:value}}], keys: [{key,label,color}]
+function stackedBars(el, data, keys, { fmt = usd, height = 220, xLabel = (x) => String(x).slice(5) } = {}) {
+  const W = el.clientWidth || 600, H = height, m = { l: 48, r: 8, t: 8, b: 26 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const totals = data.map((d) => keys.reduce((a, k) => a + (d.parts[k.key] || 0), 0));
+  const max = niceMax(Math.max(0, ...totals));
+  const bw = iw / Math.max(1, data.length), gap = Math.min(4, bw * 0.2);
+  let s = `<svg width="${W}" height="${H}" role="img">`;
+  for (let i = 0; i <= 4; i++) {
+    const y = m.t + ih - (ih * i) / 4;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="var(--grid)"/><text x="${m.l - 6}" y="${y + 4}" text-anchor="end">${esc(fmt((max * i) / 4))}</text>`;
+  }
+  const every = Math.ceil(data.length / Math.floor(iw / 46));
+  data.forEach((d, i) => {
+    const x = m.l + i * bw + gap / 2, w = Math.max(1, bw - gap);
+    let y = m.t + ih;
+    const segs = keys.filter((k) => d.parts[k.key] > 0);
+    segs.forEach((k, j) => {
+      const h = (d.parts[k.key] / max) * ih;
+      const top = j === segs.length - 1;
+      const hh = Math.max(0, h - (j > 0 ? 2 : 0)); // 2px surface gap between stacked segments
+      s += top && hh > 4
+        ? `<path d="${roundTop(x, y - h, w, hh, Math.min(4, w / 2))}" fill="${k.color}"/>`
+        : `<rect x="${x}" y="${y - h}" width="${w}" height="${hh}" fill="${k.color}"/>`;
+      y -= h;
+    });
+    const tipHtml = `<b>${esc(d.x)}</b>` + keys.filter((k) => d.parts[k.key] > 0)
+      .map((k) => `<div><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${k.color};margin-right:5px"></i>${esc(k.label)}</span><span>${esc(fmt(d.parts[k.key]))}</span></div>`).join('')
+      + (segs.length > 1 ? `<div><span>Tổng</span><b style="margin:0">${esc(fmt(totals[i]))}</b></div>` : '');
+    s += `<rect x="${m.l + i * bw}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent" data-tip="${esc(tipHtml)}"/>`;
+    if (i % every === 0) s += `<text x="${x + w / 2}" y="${H - 8}" text-anchor="middle">${esc(xLabel(d.x))}</text>`;
+  });
+  el.innerHTML = s + '</svg>';
+  bindTips(el);
+}
+function roundTop(x, y, w, h, r) { return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; }
+function niceMax(v) { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+
+// Horizontal bars, single series. rows: [{label, value, sub, href}]
+function hBars(el, rows, { fmt = usd, color = 'var(--seq)' } = {}) {
+  const max = Math.max(...rows.map((r) => r.value), 1e-9);
+  el.innerHTML = rows.map((r) => `
+    <div style="display:grid;grid-template-columns:minmax(120px,38%) 1fr 70px;gap:8px;align-items:center;margin:5px 0" data-tip="${esc(`<b>${esc(r.label)}</b>${r.tip ?? ''}`)}">
+      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.label)}">${r.href ? `<a href="${r.href}">${esc(r.label)}</a>` : esc(r.label)}</div>
+      <div style="height:14px"><div style="height:14px;width:${Math.max(0.5, (r.value / max) * 100)}%;background:${color};border-radius:0 4px 4px 0"></div></div>
+      <div style="text-align:right;font-variant-numeric:tabular-nums">${esc(fmt(r.value))}</div>
+    </div>`).join('');
+  bindTips(el);
+}
+
+function legend(keys) { return `<div class="legend">${keys.map((k) => `<span><i style="background:${k.color}"></i>${esc(k.label)}</span>`).join('')}</div>`; }
+
+function fillDays(rows, days) {
+  const map = new Map(rows.map((r) => [r.day, r]));
+  const first = rows.length ? rows[0].day : null;
+  const start = days > 0 ? Date.now() - (days - 1) * 864e5 : first ? Date.parse(first) : Date.now();
+  const out = [];
+  for (let t = start; t <= Date.now(); t += 864e5) { const d = new Date(t).toLocaleDateString('sv-SE'); out.push(map.get(d) ?? { day: d }); }
+  return out;
+}
+
+// ---------- USAGE PAGE ----------
+let usageDays = 30;
+async function renderUsage() {
+  const app = $('#app');
+  const u = await api(`/api/usage?days=${usageDays}`);
+  const T = u.totals, S = u.sessions;
+  const tokens = T.input + T.output + T.cache_read + T.cache_write;
+  const inTok = T.input + T.cache_read + T.cache_write;
+  const cacheShare = inTok ? T.cache_read / inTok : 0;
+  const models = [...new Set(u.daily.map((r) => r.model))].sort((a, b) => MODEL_SLOTS.findIndex((k) => a.includes(k)) - MODEL_SLOTS.findIndex((k) => b.includes(k)));
+  const keys = models.map((m) => ({ key: m, label: shortModel(m), color: modelColor(m) }));
+  const byDay = new Map();
+  for (const r of u.daily) { const d = byDay.get(r.day) ?? { day: r.day, parts: {} }; d.parts[r.model] = r.cost; byDay.set(r.day, d); }
+  const days = fillDays([...byDay.values()], usageDays).map((d) => ({ x: d.day, parts: d.parts ?? {} }));
+  const activeDays = days.filter((d) => Object.keys(d.parts).length).length;
+
+  app.innerHTML = `
+  <div class="filters">Khoảng thời gian:
+    ${[[7, '7 ngày'], [30, '30 ngày'], [90, '90 ngày'], [0, 'Tất cả']].map(([d, l]) => `<button data-days="${d}" class="${d === usageDays ? 'on' : ''}">${l}</button>`).join('')}
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="k">Chi phí (giá API list)</div><div class="v">${usd(T.cost)}</div><div class="s">${activeDays} ngày có dùng · TB ${usd(activeDays ? T.cost / activeDays : 0)}/ngày</div></div>
+    <div class="tile"><div class="k">Token xử lý</div><div class="v">${num(tokens)}</div><div class="s">output ${num(T.output)} · ${num(T.calls)} lượt gọi API</div></div>
+    <div class="tile"><div class="k">Session</div><div class="v">${S.n}</div><div class="s">${S.projects} project · TB ${usd(S.n ? T.cost / S.n : 0)}/session</div></div>
+    <div class="tile"><div class="k">Prompt đã gõ</div><div class="v">${S.prompts}</div><div class="s">TB ${usd(S.prompts ? T.cost / S.prompts : 0)}/prompt</div></div>
+    <div class="tile"><div class="k">Cache hit (input)</div><div class="v">${(cacheShare * 100).toFixed(1)}%</div><div class="s">${num(T.cache_read)} token đọc từ cache</div></div>
+    <div class="tile"><div class="k">Code thay đổi</div><div class="v">+${num(S.added)}</div><div class="s">−${num(S.removed)} dòng (theo cost-state)</div></div>
+    <div class="tile"><div class="k">Tool lỗi</div><div class="v">${num(S.tool_errors)}</div><div class="s">${num(S.subagents)} subagent đã chạy</div></div>
+    ${u.savings.tokens ? `<div class="tile"><div class="k">EMT Kompressor tiết kiệm (lịch sử)</div><div class="v">${num(u.savings.tokens)}</div><div class="s">token · ≈ ${usd(u.savings.cost)} · ${num(u.savings.events)} lần nén</div></div>` : ''}
+  </div>
+  <div class="card"><h2>Chi phí theo ngày <small>chia theo model</small></h2>${legend(keys)}<div id="c-daily"></div></div>
+  <div class="row">
+    <div class="card"><h2>Chi phí theo project</h2><div id="c-proj"></div></div>
+    <div class="card"><h2>Chi phí theo giờ trong ngày</h2><div id="c-hour"></div>
+      <div class="note">Giờ địa phương. Cho biết khung giờ dùng AI nhiều nhất.</div></div>
+  </div>
+  <div class="row">
+    <div class="card"><h2>Theo model</h2><table>
+      <tr><th>Model</th><th class="n">Chi phí</th><th class="n">%</th><th class="n">Input</th><th class="n">Output</th><th class="n">Cache đọc</th><th class="n">Cache ghi</th><th class="n">Session</th></tr>
+      ${u.byModel.map((m) => `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${modelColor(m.model)};margin-right:6px"></i>${esc(shortModel(m.model))}</td>
+        <td class="n">${usd(m.cost)}</td><td class="n">${T.cost ? ((m.cost / T.cost) * 100).toFixed(1) : 0}%</td><td class="n">${num(m.input)}</td><td class="n">${num(m.output)}</td>
+        <td class="n">${num(m.cache_read)}</td><td class="n">${num(m.cache_write)}</td><td class="n">${m.sessions}</td></tr>`).join('')}
+    </table></div>
+    <div class="card"><h2>Session tốn nhiều nhất</h2><table>
+      <tr><th>Session</th><th>Ngày</th><th class="n">Prompt</th><th class="n">Chi phí</th></tr>
+      ${u.topSessions.map((s) => `<tr><td><a href="#/projects/${encodeURIComponent(s.project)}">${esc(s.project)}</a><br><span class="muted">${esc(s.title ?? '')}</span></td>
+        <td class="n">${day(s.started_at)}</td><td class="n">${s.n_prompts}</td><td class="n">${usd(s.cost_usd)}${s.cost_source === 'estimated' ? ' <span class="badge" title="Ước tính từ token">ước</span>' : ''}</td></tr>`).join('')}
+    </table></div>
+  </div>
+  <div class="note">Nguồn: transcript Claude Code (<code>~/.claude/projects</code>) — chi phí lấy từ <code>cost-state</code> do Claude Code tự tính theo giá API list
+  (không phải hoá đơn thực nếu dùng gói subscription). ${S.est ? `${S.est} session thiếu cost-state được ước tính từ token.` : ''}
+  Chi phí theo ngày = chi phí session chia theo token của từng lượt gọi. Tiết kiệm token lấy từ <code>kompressor.db</code> của flezi-EMT.</div>`;
+
+  app.querySelectorAll('[data-days]').forEach((b) => b.onclick = () => { usageDays = Number(b.dataset.days); renderUsage(); });
+  stackedBars($('#c-daily'), days, keys);
+  hBars($('#c-proj'), u.byProject.slice(0, 12).map((p) => ({ label: p.project, value: p.cost, href: `#/projects/${encodeURIComponent(p.project)}`,
+    tip: `<div><span>Session</span><span>${p.sessions}</span></div><div><span>Token</span><span>${num(p.tokens)}</span></div>` })));
+  const hours = Array.from({ length: 24 }, (_, h) => ({ x: String(h).padStart(2, '0') + 'h', parts: { cost: u.byHour.find((r) => r.hour === h)?.cost ?? 0 } }));
+  stackedBars($('#c-hour'), hours, [{ key: 'cost', label: 'Chi phí', color: 'var(--seq)' }], { height: 200, xLabel: (x) => x });
+}
+
+// ---------- PROJECTS PAGE ----------
+const STATUS = {
+  active: { label: 'Đang chạy', icon: '●', hint: 'hoạt động ≤ 7 ngày' },
+  slowing: { label: 'Chậm lại', icon: '◐', hint: '8–21 ngày chưa đụng' },
+  paused: { label: 'Tạm dừng', icon: '❚❚', hint: '22–60 ngày' },
+  archived: { label: 'Lưu trữ', icon: '▣', hint: '> 60 ngày' },
+};
+const pill = (st) => `<span class="pill st-${st}" title="${STATUS[st].hint}">${STATUS[st].icon} ${STATUS[st].label}</span>`;
+const plink = (name) => `#/projects/${encodeURIComponent(name)}`;
+const leaf = (name) => name.includes('/') ? name.split('/').slice(1).join('/') : name;
+const pfilter = { status: 'all', group: 'all', q: '' };
+
+function heatLevel(v, max) { if (!v) return 0; const r = v / max; return r > .75 ? 5 : r > .5 ? 4 : r > .25 ? 3 : r > .1 ? 2 : 1; }
+// GitHub-style calendar: columns = weeks (Mon-first), rows = weekdays.
+function heatmap(el, rows, { weeks, unit = 'prompt' } = {}) {
+  weeks ??= Math.max(12, Math.min(53, Math.floor(((el.clientWidth || 700) - 40) / 16)));
+  const map = new Map(rows.map((r) => [r.day, r]));
+  const max = Math.max(1, ...rows.map((r) => r.prompts));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - ((today.getDay() + 6) % 7) - (weeks - 1) * 7);
+  const C = 13, G = 3, W = weeks * (C + G), H = 14 + 7 * (C + G);
+  let svg = `<svg width="${W}" height="${H}">`, lastMonth = -1, lastLabelW = -9;
+  for (let w = 0; w < weeks; w++) {
+    for (let d = 0; d < 7; d++) {
+      const dt = new Date(start); dt.setDate(start.getDate() + w * 7 + d);
+      if (dt > today) continue;
+      const key = dt.toLocaleDateString('sv-SE'), r = map.get(key);
+      if (d === 0 && dt.getMonth() !== lastMonth) { lastMonth = dt.getMonth(); if (w - lastLabelW >= 3 || lastLabelW < -1) { lastLabelW = w; svg += `<text x="${w * (C + G)}" y="10">Th${dt.getMonth() + 1}</text>`; } }
+      const tipHtml = `<b>${key}</b>` + (r ? `<div><span>Prompt</span><span>${r.prompts}</span></div>${r.cost ? `<div><span>Chi phí</span><span>${usd(r.cost)}</span></div>` : ''}${r.names ? `<div style="display:block;margin-top:4px;color:var(--text-secondary)">${r.names.map(esc).join('<br>')}</div>` : ''}` : '<div class="muted">Không hoạt động</div>');
+      svg += `<rect x="${w * (C + G)}" y="${14 + d * (C + G)}" width="${C}" height="${C}" rx="2" fill="var(--heat-${heatLevel(r?.prompts, max)})" data-tip="${esc(tipHtml)}"/>`;
+    }
+  }
+  el.innerHTML = `<div class="heat"><div class="wd"><span></span><span>T2</span><span></span><span>T4</span><span></span><span>T6</span><span></span><span>CN</span></div>${svg}</svg></div>
+    <div class="heat-legend">Ít ${[0, 1, 2, 3, 4, 5].map((i) => `<i style="background:var(--heat-${i})"></i>`).join('')} Nhiều <span style="margin-left:8px">(số ${unit}/ngày)</span></div>`;
+  bindTips(el);
+}
+
+function sparkline(vals, w = 120, h = 26) {
+  const max = Math.max(1, ...vals), bw = w / vals.length;
+  return `<svg width="${w}" height="${h}" aria-label="28 ngày">${vals.map((v, i) => {
+    const bh = v ? Math.max(2, (v / max) * (h - 2)) : 1;
+    return `<rect x="${i * bw + 0.5}" y="${h - bh}" width="${Math.max(1, bw - 1.5)}" height="${bh}" rx="1" fill="${v ? 'var(--series-1)' : 'var(--grid)'}"/>`;
+  }).join('')}</svg>`;
+}
+
+async function renderPortfolio() {
+  const app = $('#app');
+  const [L, act] = await Promise.all([api('/api/projects'), api('/api/activity?days=182')]);
+  const cnt = (st) => L.filter((p) => p.status === st).length;
+  const days28 = act.filter((r) => Date.parse(r.day) >= Date.now() - 28 * 864e5).length;
+  const cost30 = L.reduce((a, p) => a + p.cost_30, 0);
+  const groups = [...new Set(L.map((p) => p.group).filter(Boolean))].sort();
+  app.innerHTML = `
+  <div class="tiles">
+    <div class="tile"><div class="k">Project đang chạy</div><div class="v">${cnt('active')}</div><div class="s">${cnt('slowing')} chậm lại · ${cnt('paused')} tạm dừng · ${cnt('archived')} lưu trữ</div></div>
+    <div class="tile"><div class="k">Ngày làm việc với AI (28 ngày)</div><div class="v">${days28}</div><div class="s">${L.filter((p) => p.active_days_28).length} project có hoạt động</div></div>
+    <div class="tile"><div class="k">Chi phí 30 ngày</div><div class="v">${usd(cost30)}</div><div class="s"><a href="#/usage">xem chi tiết AI usage →</a></div></div>
+    <div class="tile"><div class="k">Đã có tóm tắt AI</div><div class="v">${L.filter((p) => p.summary_at).length}<span class="muted" style="font-size:16px"> / ${L.length}</span></div><div class="s">${L.reduce((a, p) => a + p.knowledge, 0)} file knowledge</div></div>
+  </div>
+  <div class="card"><h2>Nhịp làm việc <small>tất cả project · rê chuột để xem project trong ngày</small></h2><div id="heat"></div></div>
+  <div class="chips" id="chips">
+    ${['all', 'active', 'slowing', 'paused', 'archived'].map((st) => `<button data-st="${st}" class="${pfilter.status === st ? 'on' : ''}">${st === 'all' ? `Tất cả (${L.length})` : `${STATUS[st].icon} ${STATUS[st].label} (${cnt(st)})`}</button>`).join('')}
+    <span class="sep"></span>
+    ${['all', ...groups].map((g) => `<button data-grp="${esc(g)}" class="${pfilter.group === g ? 'on' : ''}">${g === 'all' ? 'Mọi nhóm' : esc(g)}</button>`).join('')}
+    <span class="sep"></span>
+    <input type="search" id="pf" placeholder="Lọc tên…" value="${esc(pfilter.q)}">
+  </div>
+  <div id="pcards"></div>`;
+  heatmap($('#heat'), act);
+  const draw = () => {
+    const q = pfilter.q.toLowerCase();
+    const list = L.filter((p) => (pfilter.status === 'all' || p.status === pfilter.status) && (pfilter.group === 'all' || p.group === pfilter.group) && p.project.toLowerCase().includes(q));
+    $('#pcards').innerHTML = Object.keys(STATUS).map((st) => {
+      const ps = list.filter((p) => p.status === st);
+      return ps.length ? `<div class="section-h">${STATUS[st].icon} ${STATUS[st].label} · ${ps.length}</div><div class="pgrid">${ps.map(cardHtml).join('')}</div>` : '';
+    }).join('') || '<div class="card empty">Không có project phù hợp</div>';
+  };
+  draw();
+  $('#chips').querySelectorAll('[data-st]').forEach((b) => b.onclick = () => { pfilter.status = b.dataset.st; renderPortfolio(); });
+  $('#chips').querySelectorAll('[data-grp]').forEach((b) => b.onclick = () => { pfilter.group = b.dataset.grp; renderPortfolio(); });
+  $('#pf').oninput = (e) => { pfilter.q = e.target.value; draw(); };
+}
+
+function cardHtml(p) {
+  const desc = p.headline ?? (p.last_title ? `Session gần nhất: ${p.last_title}` : 'Chưa có mô tả — mở project để tạo tóm tắt AI');
+  return `<a class="pcard" href="${plink(p.project)}">
+    <div class="top">${p.group ? `<span class="grp">${esc(p.group)}</span>` : ''}<div class="grow"></div>${pill(p.status)}</div>
+    <div class="name">${esc(leaf(p.project))}</div>
+    <div class="hl">${esc(desc)}</div>
+    ${p.current.length ? `<div class="now"><b>Đang làm:</b> ${esc(p.current[0])}</div>` : ''}
+    <div class="foot">
+      <div>${sparkline(p.spark)}<div>${p.active_days_28} ngày / 28 ngày</div></div>
+      <div class="grow"></div>
+      <div style="text-align:right">${ago(p.last_active)}<br>${p.sessions || p.emt_sessions} session · ${usd(p.cost)}${p.summary_at ? ' · <span class="badge ai">AI</span>' : ''}</div>
+    </div>
+  </a>`;
+}
+
+function weekLabel(ms) {
+  const d = new Date(ms); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const e = new Date(d); e.setDate(d.getDate() + 6);
+  const f = (x) => x.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  return { key: d.getTime(), label: `Tuần ${f(d)} – ${f(e)}` };
+}
+
+async function renderProjectDetail(name) {
+  const app = $('#app');
+  const d = await api(`/api/project?name=${encodeURIComponent(name)}`);
+  const S = d.summary?.content ?? {};
+  const cost = d.sessions.reduce((a, s) => a + (s.cost_usd || 0), 0);
+  const prompts = d.sessions.reduce((a, s) => a + (s.n_prompts || 0), 0) || d.emt?.prompts || 0;
+  const added = d.sessions.reduce((a, s) => a + (s.lines_added || 0), 0), removed = d.sessions.reduce((a, s) => a + (s.lines_removed || 0), 0);
+  const canSummarize = d.sessions.length || d.knowledge.length;
+  const st = d.status ?? 'archived';
+
+  // timeline: sessions + AI "done" items, grouped by week. Tiny sessions (≤1 prompt, e.g. scripted eval runs) fold into one row per day.
+  const tiny = new Map();
+  for (const s of d.sessions) if (s.n_prompts <= 1 && (s.cost_usd ?? 0) < 0.5) { const k = day(s.started_at); const t = tiny.get(k) ?? { ts: s.started_at, n: 0, cost: 0 }; t.n++; t.cost += s.cost_usd ?? 0; t.ts = Math.max(t.ts, s.started_at); tiny.set(k, t); }
+  const evs = [
+    ...d.sessions.filter((s) => !(s.n_prompts <= 1 && (s.cost_usd ?? 0) < 0.5)).map((s) => ({ ts: s.started_at, kind: 'session', s })),
+    ...[...tiny.values()].map((t) => ({ ts: t.ts, kind: 'tiny', t })),
+    ...(S.done ?? []).filter((x) => x.when).map((x) => ({ ts: Date.parse(x.when) + 12 * 36e5, kind: 'done', text: x.text })),
+  ].sort((a, b) => b.ts - a.ts);
+  let lastWk = null;
+  const tl = evs.map((e) => {
+    const wk = weekLabel(e.ts); let h = '';
+    if (wk.key !== lastWk) { lastWk = wk.key; h = `<div class="wk">${wk.label}</div>`; }
+    if (e.kind === 'tiny') return h + `<div class="ev" style="opacity:.7"><div class="d">${day(e.ts)}</div><div>${e.t.n} session ngắn (≤ 1 prompt — thường là chạy thử / eval tự động)</div><div class="m">${usd(e.t.cost)}</div></div>`;
+    return h + (e.kind === 'done'
+      ? `<div class="ev done"><div class="d">${day(e.ts)} · ✅ Hoàn thành</div><div>${esc(e.text)}</div></div>`
+      : `<div class="ev"><div class="d">${dt(e.s.started_at)}</div><div class="t">${esc(e.s.title ?? '(không tiêu đề)')}</div>
+         <div class="m">${e.s.n_prompts} prompt · ${usd(e.s.cost_usd)}${e.s.cost_source === 'estimated' ? ' (ước)' : ''}${e.s.lines_added != null ? ` · +${e.s.lines_added}/−${e.s.lines_removed} dòng` : ''}</div></div>`);
+  }).join('');
+
+  // files grouped by folder
+  const dirs = new Map();
+  for (const f of d.files) { const parts = f.path.split('/'); const dir = parts.slice(-3, -1).join('/') || '/'; if (!dirs.has(dir)) dirs.set(dir, []); dirs.get(dir).push({ name: parts.at(-1), ...f }); }
+  const col = (cls, title, arr) => `<div class="col ${cls}"><h3>${title}<span>${arr?.length ?? 0}</span></h3>${(arr ?? []).map((x) => `<div class="item">${esc(x)}</div>`).join('') || '<div class="muted" style="padding:4px">—</div>'}</div>`;
+
+  app.innerHTML = `
+  <a class="crumb" href="#/projects">← Tất cả dự án</a>
+  <div class="card">
+    <div class="hero">
+      <div style="flex:1;min-width:260px">
+        <div style="display:flex;gap:8px;align-items:center">${d.group ? `<span class="grp">${esc(d.group)}</span>` : ''}${pill(st)}</div>
+        <h2>${esc(leaf(name))}</h2>
+        <div class="muted">${d.first_active ? `${day(d.first_active)} → ${day(d.last_active)} · ` : ''}hoạt động gần nhất ${ago(d.last_active)}</div>
+      </div>
+      ${!canSummarize ? '' : !appState.hasKey
+        ? `<a href="#/settings" title="Cần cấu hình AI provider (API key + model)"><button class="primary" disabled style="pointer-events:none">✨ Tóm tắt bằng AI</button></a><div class="note" style="width:100%;text-align:right">🔒 Cần <a href="#/settings">cấu hình API key</a> (Claude, OpenAI, Gemini, Azure…) để bật tóm tắt</div>`
+        : `<button class="primary" id="sumbtn" ${d.summarizing ? 'disabled' : ''}>${d.summarizing ? 'Đang tóm tắt…' : d.summary ? '✨ Tóm tắt lại' : '✨ Tóm tắt bằng AI'}</button>`}
+    </div>
+    ${S.headline ? `<div class="sum" style="margin-top:12px"><div class="headline">${esc(S.headline)}</div></div>` : ''}
+    <div class="kpis">
+      <div class="kpi"><div class="v">${d.sessions.length || d.emt?.sessions || 0}</div><div class="k">session${!d.sessions.length && d.emt?.sessions ? ' (EMT)' : ''}</div></div>
+      <div class="kpi"><div class="v">${prompts}</div><div class="k">prompt</div></div>
+      <div class="kpi"><div class="v">${d.activity.length}</div><div class="k">ngày làm việc</div></div>
+      <div class="kpi"><div class="v">${usd(cost)}</div><div class="k">chi phí AI</div></div>
+      <div class="kpi"><div class="v">+${num(added)}<span class="muted" style="font-size:14px"> / −${num(removed)}</span></div><div class="k">dòng code</div></div>
+      <div class="kpi"><div class="v">${d.knowledge.length + (S.knowledge?.length ?? 0)}</div><div class="k">knowledge</div></div>
+    </div>
+    ${d.summary ? `<div class="note">Tóm tắt AI: ${esc(d.summary.model)} · ${dt(d.summary.generated_at)}${S._usage ? ` · ${num(S._usage.input)} token vào / ${num(S._usage.output)} ra${S._usage.costUsd != null ? ` · ≈ ${usd(S._usage.costUsd)}` : ''}` : ''}</div>` : ''}
+    ${d.sessions.some((x) => x.tool_errors) ? `<div class="note">Tool lỗi: ${d.sessions.reduce((a, x) => a + (x.tool_errors || 0), 0)} · Subagent: ${d.sessions.reduce((a, x) => a + (x.subagents || 0), 0)}</div>` : ''}
+  </div>
+  ${d.summary ? `<div class="board" style="margin-bottom:14px">
+      ${col('c-now', '🔧 Đang làm', S.current)}${col('c-open', '⚠️ Còn mở / rủi ro', S.open)}${col('c-dec', '📌 Quyết định đã chốt', S.decisions)}
+    </div>` : `<div class="card"><div class="muted">Chưa có tóm tắt AI cho project này. ${appState.hasKey ? '' : '(Cần <a href="#/settings">đăng ký API key</a> trước.) '}Bấm <b>✨ Tóm tắt bằng AI</b> để có bảng <b>Đang làm · Còn mở · Quyết định</b>, timeline các việc đã hoàn thành và knowledge.</div></div>`}
+  <div class="split">
+    <div class="card"><h2>Timeline <small>session + việc đã hoàn thành, theo tuần</small></h2>
+      ${tl ? `<div class="tl">${tl}</div>` : `<div class="muted">Transcript đã bị Claude Code dọn — chỉ còn nhịp hoạt động từ EMT (heatmap bên phải).</div>`}</div>
+    <div>
+      <div class="card"><h2>Nhịp làm việc</h2><div id="pheat"></div></div>
+      <div class="card"><h2>📚 Knowledge</h2>
+        ${S.knowledge?.length ? `<ul class="klist" style="padding-left:18px;margin:0 0 10px">${S.knowledge.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
+        ${d.knowledge.length ? `<div class="section-h" style="margin-top:10px">Memory Claude đã lưu · ${d.knowledge.length}</div><div class="kgrid">${d.knowledge.map((k, i) => `<div class="kcard" data-k="${i}"><b>${esc(k.name)}</b><span>${esc(k.description)}</span></div>`).join('')}</div>` : ''}
+        ${!S.knowledge?.length && !d.knowledge.length ? '<div class="muted">Chưa có</div>' : ''}
+      </div>
+      <div class="card"><h2>File sửa nhiều nhất <small>theo thư mục</small></h2>
+        ${d.files.length ? `<div class="ftree">${[...dirs].slice(0, 8).map(([dir, fs]) => `<div class="dir">📁 ${esc(dir)}</div>${fs.map((f) => `<div class="f" title="${esc(f.path)}"><span>${esc(f.name)}</span><span>${f.sessions} session</span></div>`).join('')}`).join('')}</div>` : '<div class="muted">Chưa có</div>'}
+        ${d.tools.length ? `<div class="note">Tool hay dùng: ${d.tools.map(([t, n]) => `${esc(t)} ${n}`).join(' · ')}</div>` : ''}
+      </div>
+    </div>
+  </div>
+  <div class="card"><details><summary><b>Lịch sử prompt</b> <span class="muted">${d.prompts.length} gần nhất</span></summary>
+    ${d.prompts.map((p) => `<div class="prompt"><span class="muted">${dt(p.ts)}</span>\n${esc(p.text)}</div>`).join('') || '<div class="muted">Chưa có</div>'}</details></div>
+  <dialog id="kdlg"><h3 id="kdlg-t"></h3><pre id="kdlg-c"></pre><form method="dialog" style="text-align:right"><button>Đóng</button></form></dialog>`;
+
+  heatmap($('#pheat'), d.activity);
+  app.querySelectorAll('[data-k]').forEach((c) => c.onclick = () => {
+    const k = d.knowledge[Number(c.dataset.k)]; $('#kdlg-t').textContent = k.name; $('#kdlg-c').textContent = k.content; $('#kdlg').showModal();
+  });
+  const btn = $('#sumbtn');
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Đang tóm tắt… (~30s)';
+    try { await post(`/api/summarize?name=${encodeURIComponent(name)}`); await renderProjectDetail(name); }
+    catch (e) { alert('Lỗi tóm tắt: ' + e.message); btn.disabled = false; btn.textContent = '✨ Thử lại'; }
+  };
+}
+
+// ---------- SEARCH ----------
+async function renderSearch(q) {
+  const r = await api(`/api/search?q=${encodeURIComponent(q)}`);
+  const hl = (t) => esc(t).replace(new RegExp(esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (m) => `<mark>${m}</mark>`);
+  $('#app').innerHTML = `<div class="card"><h2>Kết quả cho “${esc(q)}”</h2>
+    <h3>Session (${r.sessions.length})</h3>${r.sessions.map((s) => `<div><a href="#/projects/${encodeURIComponent(s.project)}">${esc(s.project)}</a> · ${day(s.started_at)} · ${hl(s.title ?? '')}</div>`).join('') || '<div class="muted">—</div>'}
+    <h3>Knowledge (${r.knowledge.length})</h3>${r.knowledge.map((k) => `<div><a href="#/projects/${encodeURIComponent(k.project)}">${esc(k.project)}</a> · <b>${hl(k.name)}</b> <span class="muted">${hl(k.description)}</span></div>`).join('') || '<div class="muted">—</div>'}
+    <h3>Prompt (${r.prompts.length})</h3>${r.prompts.map((p) => `<div class="prompt"><span class="muted">${dt(p.ts)} · <a href="#/projects/${encodeURIComponent(p.project)}">${esc(p.project)}</a></span>\n${hl(p.text)}</div>`).join('') || '<div class="muted">—</div>'}
+  </div>`;
+}
+
+// ---------- SETTINGS ----------
+const post = (p, body) => api(p, { method: 'POST', headers: { 'content-type': 'application/json', 'x-brain': '1' }, body: JSON.stringify(body ?? {}) });
+let appState = { hasKey: false };
+const modelCache = {};
+
+const inputCss = 'padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface-1);color:var(--text-primary);font:inherit';
+
+function providerCard(id, p, active, efforts) {
+  const st = p.settings ?? {};
+  const isActive = id === active;
+  const status = isActive && p.ready ? '<span class="pill st-active">● Đang dùng</span>'
+    : p.ready ? '<span class="pill st-active" style="opacity:.8">✓ Sẵn sàng</span>'
+    : p.hasKey ? '<span class="pill st-slowing">◐ Thiếu model / cấu hình</span>' : '<span class="pill st-paused">○ Chưa cấu hình</span>';
+  const models = modelCache[id] ?? [];
+  return `<details class="card prov" data-id="${id}" ${isActive || (!p.ready && id === 'anthropic' && !Object.values(appState.providers ?? {}).some((x) => x.ready)) ? 'open' : ''} style="padding:0">
+    <summary style="padding:12px 16px;display:flex;gap:10px;align-items:center;list-style:none">
+      <b style="font-size:15px">${esc(p.label)}</b><div class="grow"></div>
+      ${p.hasKey ? `<code class="muted">${esc(p.keyHint)}</code>` : ''}${status}
+    </summary>
+    <div style="padding:0 16px 14px">
+      <table style="max-width:760px">
+        <tr><td style="width:150px">API key</td><td><input type="password" data-f="apiKey" autocomplete="off" spellcheck="false"
+          placeholder="${esc(p.hasKey ? 'Đã lưu — nhập key mới để thay thế' : p.keyPlaceholder)}" style="${inputCss};width:100%;font-family:Consolas,monospace">
+          ${p.docs ? `<div class="note" style="margin-top:4px">Lấy key tại <a href="${p.docs}" target="_blank" rel="noopener">${esc(new URL(p.docs).host)}</a></div>` : ''}</td></tr>
+        ${p.fields.map((f) => `<tr><td>${esc(f.label)}${f.required ? ' *' : ''}</td><td><input data-f="${f.name}" value="${esc(st[f.name] ?? f.default ?? '')}" placeholder="${esc(f.placeholder ?? '')}" style="${inputCss};width:100%"></td></tr>`).join('')}
+        <tr><td>${esc(p.modelLabel ?? 'Model')} *</td><td style="display:flex;gap:6px">
+          <input data-f="model" list="ml-${id}" value="${esc(st.model ?? p.defaultModel ?? '')}" placeholder="Bấm “Lấy danh sách model” để chọn" style="${inputCss};flex:1">
+          <datalist id="ml-${id}">${models.map((m) => `<option value="${esc(m)}">`).join('')}</datalist>
+          <button data-act="models">Lấy danh sách model</button></td></tr>
+        ${p.effort ? `<tr><td>Effort</td><td><select data-f="effort" style="${inputCss}">${efforts.map((e) => `<option ${e === (st.effort ?? 'medium') ? 'selected' : ''}>${e}</option>`).join('')}</select>
+          <span class="muted">medium = mặc định</span></td></tr>` : ''}
+      </table>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="primary" data-act="save">Lưu &amp; kiểm tra</button>
+        ${isActive ? '' : `<button data-act="activate" ${p.ready ? '' : 'disabled title="Cần lưu key + model trước"'}>Dùng provider này</button>`}
+        ${p.hasKey ? '<button data-act="delete">Xoá key</button>' : ''}
+        <span class="msg note" style="margin:6px 0 0"></span>
+      </div>
+      ${models.length ? `<div class="note">${models.length} model khả dụng: ${models.slice(0, 12).map(esc).join(', ')}${models.length > 12 ? '…' : ''}</div>` : ''}
+    </div>
+  </details>`;
+}
+
+async function renderSettings() {
+  const s = await api('/api/settings');
+  appState.hasKey = s.ready; appState.providers = s.providers;
+  const app = $('#app');
+  const act = s.providers[s.active];
+  app.innerHTML = `
+  <div style="max-width:900px">
+  <div class="card">
+    <h2>🤖 AI dùng để tóm tắt project</h2>
+    <div>${s.ready
+      ? `Đang dùng <b>${esc(act.label)}</b> · model <code>${esc(act.settings.model ?? act.defaultModel)}</code>`
+      : `<span class="pill st-slowing">◐ Chưa cấu hình</span> <span class="muted">Chức năng ✨ Tóm tắt bằng AI đang bị tắt — thêm API key của một provider bên dưới.</span>`}</div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">Ngôn ngữ tóm tắt
+      <input id="lang" value="${esc(s.language)}" style="${inputCss}"><button id="savelang">Lưu</button><span id="langmsg" class="muted"></span></div>
+    <div class="note">Mỗi key được kiểm tra bằng cách lấy danh sách model của provider (không tốn token), rồi lưu vào <code>~/.personal-brain/secrets.json</code>
+      dưới dạng mã hoá <b>Windows DPAPI</b> — chỉ tài khoản Windows của bạn trên máy này giải mã được. Server không bao giờ gửi key ra trình duyệt.
+      Lưu ý: tóm tắt sẽ gửi tiêu đề session, prompt và memory của project tới provider được chọn.</div>
+  </div>
+  ${Object.entries(s.providers).map(([id, p]) => providerCard(id, p, s.active, s.efforts)).join('')}
+  <div class="card">
+    <h2>🗂 Nguồn dữ liệu</h2>
+    <div>Nguồn chính: transcript Claude Code (<code>~/.claude/projects</code>) — prompt, file sửa, token/model, chi phí, tool lỗi, subagent.</div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="emt" ${s.importEmt ? 'checked' : ''}>
+      Import thêm lịch sử từ flezi-EMT (<code>~/.flezi-emt</code>) — dữ liệu đã import vẫn giữ khi tắt.</label>
+    <div style="margin-top:10px"><button id="saveemt">Lưu</button> <span id="emtmsg" class="muted"></span></div>
+  </div>
+  </div>`;
+
+  const flash = (el, text, ok) => { el.textContent = text; el.style.color = ok ? 'var(--good)' : 'var(--warn)'; };
+  app.querySelectorAll('.prov').forEach((card) => {
+    const id = card.dataset.id;
+    const val = (f) => card.querySelector(`[data-f="${f}"]`)?.value ?? '';
+    const collect = () => Object.fromEntries([...card.querySelectorAll('[data-f]')].filter((e) => e.dataset.f !== 'apiKey').map((e) => [e.dataset.f, e.value]));
+    const msg = card.querySelector('.msg');
+    const busy = async (btn, label, fn) => {
+      const old = btn.textContent; btn.disabled = true; btn.textContent = label;
+      try { await fn(); } catch (e) { flash(msg, '✗ ' + e.message); } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = old; } }
+    };
+    card.querySelector('[data-act="save"]').onclick = (e) => busy(e.target, 'Đang kiểm tra…', async () => {
+      await post('/api/settings', { provider: id, apiKey: val('apiKey'), settings: collect(), verify: true });
+      await renderSettings(); status();
+      const c = $(`.prov[data-id="${id}"]`); c.open = true; flash(c.querySelector('.msg'), '✓ Đã lưu', true);
+    });
+    card.querySelector('[data-act="models"]').onclick = (e) => busy(e.target, 'Đang tải…', async () => {
+      const k = val('apiKey');
+      if (k) await post('/api/settings', { provider: id, apiKey: k, settings: collect() }); // save new key first
+      const r = await post('/api/settings/models', { provider: id, settings: collect() });
+      modelCache[id] = r.models;
+      await renderSettings(); status();
+      const c = $(`.prov[data-id="${id}"]`); c.open = true;
+      flash(c.querySelector('.msg'), r.models.length ? `✓ ${r.models.length} model — chọn trong ô Model` : '✓ Key hợp lệ (provider không trả danh sách — nhập tên model/deployment)', true);
+    });
+    const a = card.querySelector('[data-act="activate"]');
+    if (a) a.onclick = (e) => busy(e.target, '…', async () => { await post('/api/settings', { provider: id, settings: collect(), activate: true }); await renderSettings(); status(); });
+    const d = card.querySelector('[data-act="delete"]');
+    if (d) d.onclick = (e) => { if (confirm(`Xoá API key của ${s.providers[id].label}?`)) busy(e.target, '…', async () => { await post('/api/settings', { provider: id, clearKey: true }); await renderSettings(); status(); }); };
+  });
+  $('#savelang').onclick = async () => { try { await post('/api/settings', { language: $('#lang').value }); flash($('#langmsg'), '✓ Đã lưu', true); } catch (e) { flash($('#langmsg'), '✗ ' + e.message); } };
+  $('#saveemt').onclick = async () => { try { await post('/api/settings', { importEmt: $('#emt').checked }); flash($('#emtmsg'), '✓ Đã lưu', true); } catch (e) { flash($('#emtmsg'), '✗ ' + e.message); } };
+}
+
+// ---------- router / status ----------
+async function route() {
+  const h = decodeURIComponent(location.hash.slice(1)) || '/projects';
+  $('#nav-projects').classList.toggle('on', h.startsWith('/projects'));
+  $('#nav-usage').classList.toggle('on', h.startsWith('/usage'));
+  $('#nav-settings').classList.toggle('on', h.startsWith('/settings'));
+  try {
+    if (h.startsWith('/settings')) await renderSettings();
+    else if (h.startsWith('/usage')) await renderUsage();
+    else if (h.startsWith('/search/')) await renderSearch(h.slice(8));
+    else if (h.startsWith('/projects/')) await renderProjectDetail(h.slice(10));
+    else await renderPortfolio();
+  } catch (e) { $('#app').innerHTML = `<div class="card empty">Lỗi: ${esc(e.message)}</div>`; }
+}
+addEventListener('hashchange', route);
+$('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.value.trim()) location.hash = '#/search/' + encodeURIComponent(e.target.value.trim()); });
+$('#refresh').onclick = async () => {
+  const b = $('#refresh'); b.disabled = true; b.textContent = 'Đang đọc…';
+  try { await post('/api/refresh'); await route(); } finally { b.disabled = false; b.textContent = '↻ Cập nhật'; status(); }
+};
+async function status() {
+  const s = await api('/api/status').catch(() => null);
+  if (s) { appState.hasKey = s.hasKey; $('#keybadge').style.display = s.hasKey ? 'none' : 'inline-block'; }
+  $('#status').textContent = !s ? 'server offline' : s.ingesting ? 'đang đọc dữ liệu…' : s.lastIngest ? `cập nhật ${new Date(s.lastIngest).toLocaleTimeString('vi-VN').slice(0, 5)}` : '';
+}
+let resizeT; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(route, 250); });
+status().then(route); setInterval(status, 15000);
+</script>
+</body>
+</html>

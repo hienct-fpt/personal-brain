@@ -1,0 +1,10 @@
+node_modules/
+# runtime data (created when running from src/ in dev mode, or in the install dir)
+src/config.json
+src/secrets.json
+src/brain.db*
+src/*.log
+src/runs/
+src/version.json
+*.bak
+.DS_Store

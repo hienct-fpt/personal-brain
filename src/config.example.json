@@ -1,0 +1,30 @@
+{
+  "port": 4377,
+  "workspaceRoot": "~/workspace",
+  "claudeProjectsDir": "~/.claude/projects",
+  "emtDir": "~/.flezi-emt",
+
+  "_projectDepth": "Số cấp thư mục dưới workspaceRoot tạo thành 1 project. Mặc định 1; khai báo riêng cho thư mục 'nhóm' (vd khách hàng).",
+  "projectDepth": { "*": 1, "clients": 2 },
+
+  "_aliases": "Regex (khớp trên cwd, dùng /) → tên project. Áp dụng trước projectDepth.",
+  "aliases": [],
+
+  "_exclude": "Project không ghi nhận và không gửi lên AI (prefix của tên project).",
+  "exclude": ["(personal-brain)"],
+
+  "_importEmt": "Import lịch sử từ flezi-EMT nếu thư mục emtDir tồn tại.",
+  "importEmt": false,
+
+  "ai": {
+    "active": "anthropic",
+    "language": "Tiếng Việt",
+    "maxSessions": 40,
+    "providers": { "anthropic": { "model": "claude-opus-5-5", "effort": "medium" } }
+  },
+
+  "_costUnits": "Hệ số quy đổi token → 'đơn vị giá' (so với input). Dùng để chia chi phí theo ngày và ước tính session thiếu cost-state.",
+  "costUnits": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite5m": 1.25, "cacheWrite1h": 2 },
+
+  "refreshMinutes": 10
+}
