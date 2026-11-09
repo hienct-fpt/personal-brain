@@ -47,6 +47,12 @@ ok('GET /api/status', status.status === 200 && 'ingesting' in (status.body ?? {}
 const usage = await getJson('/api/usage?days=30');
 ok('GET /api/usage', usage.status === 200 && usage.body?.totals && Array.isArray(usage.body?.daily));
 
+const ins = await getJson('/api/insights?days=30');
+ok('GET /api/insights', ins.status === 200 && Array.isArray(ins.body?.tips) && ins.body.tips.every((t) => t.id && t.title && Array.isArray(t.items) && t.actions?.length),
+  `${ins.body?.tips?.length ?? 0} gợi ý`);
+const insAll = await getJson('/api/insights?days=0');
+ok('GET /api/insights?days=0', insAll.status === 200 && Array.isArray(insAll.body?.tips));
+
 const projects = await getJson('/api/projects');
 ok('GET /api/projects', projects.status === 200 && Array.isArray(projects.body), `${projects.body?.length ?? 0} project`);
 

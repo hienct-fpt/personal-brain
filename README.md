@@ -4,6 +4,7 @@ Dashboard chạy local, tổng hợp những gì bạn đã làm với **Claude 
 
 - **Dự án**: đang làm gì, đã làm gì, quyết định, knowledge. Có heatmap nhịp làm việc, timeline theo tuần, bảng Kanban, và tóm tắt bằng AI.
 - **AI usage**: token, model, chi phí theo ngày / project / model / giờ trong ngày; tỉ lệ cache, tool lỗi, subagent.
+- **💡 Gợi ý tối ưu**: cảnh báo khi Opus chiếm phần lớn chi phí (kèm ước tính tiết kiệm nếu chuyển sang Sonnet), dùng nhiều subagent, tool lỗi nhiều, cache hit thấp, session dài tốn kém, prompt gõ lặp lại; mỗi mục có việc nên làm cụ thể.
 
 Dữ liệu đọc thẳng từ transcript của Claude Code (`~/.claude/projects`), lưu vào SQLite (`node:sqlite`) và **chỉ nằm trên máy của bạn**.
 Tóm tắt AI là tùy chọn: hỗ trợ Anthropic (Claude), OpenAI, Google Gemini, Azure OpenAI và các API tương thích OpenAI (OpenRouter, DeepSeek, Groq, Ollama…).
