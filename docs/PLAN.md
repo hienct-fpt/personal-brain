@@ -1,6 +1,6 @@
 # Personal Brain — Plan thực hiện (bản tự build)
 
-> Ngày lập: 2026-11-09 · Trạng thái: **v0.5 — v1 đã chạy được** (dashboard local, đọc transcript Claude Code)
+> Ngày lập: 2026-11-09 · Trạng thái: **v0.6.1 — v1 đã chạy được + 💡 Gợi ý tối ưu** (dashboard local, đọc transcript Claude Code)
 
 ## 1. Mục tiêu
 
@@ -166,6 +166,19 @@ sequenceDiagram
 - Biểu đồ: chi phí theo ngày (tách theo model), theo project, theo giờ trong ngày.
 - Bảng theo model; bảng session tốn nhiều nhất. Lọc theo 7/30/90 ngày/tất cả.
 
+**Tab 💡 Gợi ý** (`GET /api/insights?days=`): luật cố định trong `TIP_RULES` (`src/server.mjs`), không gọi AI.
+
+| Kiểm tra | Ngưỡng | Gợi ý |
+| --- | --- | --- |
+| Tỉ lệ Opus | ≥ 80% chi phí (cao ≥ 90%) | `opusplan`, `model: sonnet` cho command/skill; ước tiết kiệm từ giá/units thực tế Sonnet vs Opus |
+| Subagent | ≥ 20 trong kỳ | gán model rẻ cho agent, hạn chế fan-out |
+| Tool lỗi | ≥ 20/project hoặc ≥ 5/session | ghi lệnh đúng vào CLAUDE.md, allowlist quyền |
+| Cache hit | < 80% ở project ≥ $2 | tránh đổi model/CLAUDE.md giữa session, tránh nghỉ lâu |
+| Session dài | ≥ 40 prompt và ≥ $30 | `/clear`, `/compact`, handoff |
+| Prompt lặp | ≥ 3 lần (bỏ `/…`, text > 300 ký tự) | biến thành slash command / hook |
+
+Số gợi ý mức "Ưu tiên cao" hiện thành badge trên tab.
+
 **⚙ Cài đặt:** đăng ký/kiểm tra/xoá API key; chọn model, effort, ngôn ngữ tóm tắt.
 
 **Tìm kiếm:** trong tiêu đề session, prompt và knowledge.
@@ -217,7 +230,7 @@ sequenceDiagram
 | --- | --- | --- |
 | 1. Kiểm tra | `node:sqlite` + FTS5 trên Node v22.19.0; định dạng transcript, `cost-state` | ✅ |
 | 2. Ingest | transcript + subagents + memory files, tăng dần | ✅ 70 session, đối chiếu chi phí khớp |
-| 3. Dashboard | Dự án (portfolio + chi tiết), AI usage, tìm kiếm | ✅ |
+| 3. Dashboard | Dự án (portfolio + chi tiết), AI usage, 💡 Gợi ý tối ưu, tìm kiếm | ✅ |
 | 4. Tóm tắt AI | 5 provider (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), khoá bằng API key, ⚙ Cài đặt | ✅ code xong — **chưa chạy thử với key thật** |
 | 5. Hook & lưu giữ | SessionEnd + `cleanupPeriodDays` 365 | ✅ đã cài — xác nhận qua `ingest-hook.log` sau session kế tiếp |
 | 6. (Sau) | Nút "Tóm tắt tất cả project đang chạy"; Claude đọc brain qua MCP/skill; thêm nguồn GitHub Copilot, git commit; FTS5 cho tìm kiếm | — |
