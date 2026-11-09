@@ -16,13 +16,25 @@ Tóm tắt AI là tùy chọn: hỗ trợ Anthropic (Claude), OpenAI, Google Gem
 
 ## Cài đặt
 
+Mã nguồn: <https://github.com/hienct-fpt/personal-brain>
+
+Windows:
+
 ```bat
-git clone <repo-url> personal-brain
+git clone https://github.com/hienct-fpt/personal-brain.git
 cd personal-brain
 install.cmd
 ```
 
-macOS/Linux: `node scripts/install.mjs`
+macOS/Linux:
+
+```sh
+git clone https://github.com/hienct-fpt/personal-brain.git
+cd personal-brain
+node scripts/install.mjs
+```
+
+Không có git: tải [file ZIP](https://github.com/hienct-fpt/personal-brain/archive/refs/heads/main.zip), giải nén rồi chạy `install.cmd` (hoặc `node scripts/install.mjs`) trong thư mục vừa giải nén. Cách này không nâng cấp bằng `git pull` được; khi có bản mới, tải lại ZIP rồi cài đè.
 
 Script cài đặt làm các bước sau:
 
@@ -62,10 +74,18 @@ flowchart TD
 | `--no-ingest` | Không đọc transcript sau khi cài |
 | `--dry-run` | Chỉ in ra những gì sẽ làm, không thay đổi gì |
 
-**Nâng cấp**: `git pull`, rồi chạy lại `install.cmd`. Chỉ các file code bị thay; `config.json`, `secrets.json`, `brain.db` và log được giữ nguyên.
-Nếu dashboard đang chạy, tắt nó (Ctrl+C) rồi chạy lại `brain`.
+**Nâng cấp** lên bản mới nhất trên GitHub. Chạy trong thư mục đã clone:
 
-**Gỡ cài đặt**: `uninstall.cmd` gỡ hook và lệnh `brain`, xóa code nhưng giữ dữ liệu. Thêm `--purge` để xóa luôn dữ liệu.
+```sh
+git pull
+install.cmd                  # macOS/Linux: node scripts/install.mjs
+```
+
+Chỉ các file code bị thay; `config.json`, `secrets.json`, `brain.db` và log được giữ nguyên.
+Nếu dashboard đang chạy, tắt nó (Ctrl+C) rồi chạy lại `brain`. Xem phiên bản đang cài bằng `brain version`.
+
+**Gỡ cài đặt**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) gỡ hook và lệnh `brain`, xóa code nhưng giữ dữ liệu. Thêm `--purge` để xóa luôn dữ liệu.
+Sau đó có thể xóa thư mục đã clone.
 
 ```mermaid
 flowchart LR
@@ -121,6 +141,8 @@ flowchart LR
 ## Phát triển
 
 ```bat
+git clone https://github.com/hienct-fpt/personal-brain.git
+cd personal-brain
 npm install
 npm run dev        :: chạy server từ src/ (dữ liệu dev tạo trong src/, đã gitignore)
 npm run check      :: kiểm tra cú pháp toàn bộ .mjs, script dashboard, JSON
@@ -150,3 +172,8 @@ docs/PLAN.md           kế hoạch và quyết định thiết kế
 - Server chỉ nghe ở `127.0.0.1`. Request POST phải có header `x-brain: 1` và Origin là chính server (chống CSRF).
 - API key không bao giờ được gửi ra trình duyệt. Secret trong prompt bị che trước khi lưu.
 - Tóm tắt AI gửi tiêu đề session, prompt và memory của project tới provider bạn chọn. Thêm project nhạy cảm vào `exclude` để chặn việc này.
+
+## Báo lỗi & góp ý
+
+Tạo issue tại <https://github.com/hienct-fpt/personal-brain/issues>. Kèm phiên bản (`brain version`), hệ điều hành, phiên bản Node.js và log lỗi nếu có (`ingest-hook.log` trong thư mục cài).
+Trước khi gửi, kiểm tra log không chứa prompt hay đường dẫn nhạy cảm.
