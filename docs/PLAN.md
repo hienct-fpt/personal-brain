@@ -1,6 +1,6 @@
 # Personal Brain — Plan thực hiện (bản tự build)
 
-> Ngày lập: 2026-11-09 · Trạng thái: **v0.6.1 — v1 đã chạy được + 💡 Gợi ý tối ưu** (dashboard local, đọc transcript Claude Code)
+> Ngày lập: 2026-11-09 · Trạng thái: **v0.6.2 — v1 đã chạy được + 💡 Gợi ý tối ưu + chạy nền (`brain start`)** (dashboard local, đọc transcript Claude Code)
 
 ## 1. Mục tiêu
 
@@ -117,11 +117,13 @@ sequenceDiagram
 ├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
 ├─ secrets.mjs          # lưu API key theo từng provider, mã hoá Windows DPAPI
 ├─ server.mjs           # HTTP server + API JSON
+├─ service.mjs          # brain start|stop|restart|status|autostart (chạy nền, HKCU Run)
 ├─ hook-sessionend.mjs  # hook SessionEnd: chạy ingest nền rồi thoát ngay
 ├─ public/index.html    # dashboard (JS thuần + SVG)
-├─ brain.cmd            # brain | brain ingest [--full] | brain summarize "<project>"
+├─ brain.cmd            # brain | brain start/stop/restart/status/autostart | brain ingest [--full] | brain summarize "<project>"
 ├─ secrets.json         # API key đã mã hoá (không commit, không copy sang máy khác)
 ├─ brain.db             # SQLite
+├─ server.log           # log của server chạy nền (tự cắt khi > 5 MB)
 └─ ingest-hook.log      # log của hook
 ```
 

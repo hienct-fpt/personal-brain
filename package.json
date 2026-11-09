@@ -1,6 +1,6 @@
 {
   "name": "personal-brain",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "description": "Local dashboard of what you did with Claude Code: projects, knowledge, AI token/cost usage",
   "type": "module",
