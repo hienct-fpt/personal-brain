@@ -103,7 +103,11 @@ flowchart LR
 ## Sử dụng
 
 ```text
-brain                      mở dashboard  →  http://localhost:4377
+brain                      mở dashboard trong cửa sổ terminal này  →  http://localhost:4377
+brain start                chạy dashboard ở nền (không cần giữ cửa sổ; log: server.log trong thư mục cài)
+brain stop | restart       tắt / khởi động lại server (sau khi nâng cấp: brain restart)
+brain status               server có chạy không, đang chạy bản nào, có tự chạy khi đăng nhập không
+brain autostart on|off     tự chạy nền khi đăng nhập Windows
 brain ingest [--full]      đọc transcript mới (--full: đọc lại tất cả)
 brain summarize "<proj>"   tóm tắt AI cho 1 project
 brain version              phiên bản đang cài

@@ -5,7 +5,7 @@
 //
 //   --port <n>  port to use (default 4399; never the installed dashboard's 4377)
 //   --keep      leave the server running after the checks (Ctrl+C to stop)
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,6 +43,7 @@ ok('GET /', html.includes('<script>'));
 
 const status = await getJson('/api/status');
 ok('GET /api/status', status.status === 200 && 'ingesting' in (status.body ?? {}));
+ok('status có app/pid/background', status.body?.app === 'personal-brain' && status.body?.pid === srv.pid && status.body?.background === false);
 
 const usage = await getJson('/api/usage?days=30');
 ok('GET /api/usage', usage.status === 200 && usage.body?.totals && Array.isArray(usage.body?.daily));
@@ -78,6 +79,22 @@ ok('POST Origin lạ → 403', foreign.status === 403);
 
 const errors = log.split('\n').filter((l) => /error|lỗi|✗|^!/i.test(l));
 ok('log server không có lỗi', !errors.length, errors.slice(0, 3).join(' | '));
+
+// service.mjs (brain start/stop/status) against this port: stop our server, start it in the background, stop again.
+if (!keep) {
+  const svc = (...a) => spawnSync(process.execPath, ['--no-warnings', join(root, 'src', 'service.mjs'), ...a],
+    { env: { ...process.env, BRAIN_PORT: String(port) }, encoding: 'utf8', timeout: 30000 });
+  const alive = async () => { try { return (await fetch(`${base}/api/status`, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } };
+  ok('service status → đang chạy', svc('status').stdout.includes('Đang chạy'));
+  const st = svc('stop');
+  ok('service stop', st.status === 0 && !(await alive()), st.stderr.trim());
+  const sa = svc('start');
+  const bg = await getJson('/api/status').catch(() => ({}));
+  ok('service start → chạy nền', sa.status === 0 && bg.body?.background === true, (sa.stderr || '').trim());
+  const sb = svc('stop');
+  ok('service stop (nền)', sb.status === 0 && !(await alive()), sb.stderr.trim());
+  if (await alive()) svc('stop'); // never leave a background server behind on a failed check
+}
 
 console.log(fails ? `\n${fails} kiểm tra thất bại` : '\n✓ smoke OK');
 if (keep && !fails) { console.log(`Server vẫn chạy ở ${base} (Ctrl+C để dừng)`); srv.stdout.pipe(process.stdout); srv.stderr.pipe(process.stderr); }

@@ -12,6 +12,9 @@ import { summarizeProject, NoApiKeyError, EFFORTS, aiConfig, activeProvider } fr
 const cfg = loadConfig();
 const db = openDb();
 const port = Number(process.env.BRAIN_PORT ?? cfg.port);
+// Commit of the code this process loaded vs. what is installed now (differs after an upgrade until restart).
+const readCommit = () => { try { return JSON.parse(readFileSync(join(HOME, 'version.json'), 'utf8')).commit ?? null; } catch { return null; } };
+const VERSION = readCommit();
 const state = { ingesting: false, lastIngest: null, lastResult: null, summarizing: new Set() };
 
 async function runIngest() {
@@ -338,7 +341,8 @@ const server = createServer(async (req, res) => {
   if (req.method !== 'GET' && !trusted(req, port)) return send(res, 403, { error: 'forbidden' });
   try {
     if (p === '/' || p === '/index.html') return send(res, 200, readFileSync(join(HOME, 'public', 'index.html'), 'utf8'), 'text/html; charset=utf-8');
-    if (p === '/api/status') return send(res, 200, { ingesting: state.ingesting, lastIngest: state.lastIngest, lastResult: state.lastResult, summarizing: [...state.summarizing], hasKey: activeProvider().ready, provider: activeProvider().id });
+    if (p === '/api/status') return send(res, 200, { app: 'personal-brain', pid: process.pid, version: VERSION, installed: readCommit(),
+      background: process.env.BRAIN_BG === '1', ingesting: state.ingesting, lastIngest: state.lastIngest, lastResult: state.lastResult, summarizing: [...state.summarizing], hasKey: activeProvider().ready, provider: activeProvider().id });
     if (p === '/api/settings' && req.method === 'GET') return send(res, 200, settings());
     // body: { provider?, apiKey?, clearKey?, settings?: {model, effort, endpoint, baseUrl, apiVersion}, activate?, language? }
     if (p === '/api/settings' && req.method === 'POST') {
@@ -418,7 +422,9 @@ server.on('error', (e) => {
   } else { console.error(e); process.exit(1); }
 });
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Personal Brain → ${appUrl}  (Ctrl+C để dừng)`);
+  console.log(process.env.BRAIN_BG === '1'
+    ? `${new Date().toISOString()} Personal Brain${VERSION ? ` ${VERSION}` : ''} → ${appUrl} (nền, pid ${process.pid})`
+    : `Personal Brain → ${appUrl}  (Ctrl+C để dừng)`);
   openBrowser();
   runIngest();
   setInterval(runIngest, (cfg.refreshMinutes ?? 10) * 60e3).unref();

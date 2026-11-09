@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(REPO, 'src');
 const WIN = process.platform === 'win32';
-const RUNTIME_FILES = new Set(['config.json', 'secrets.json', 'brain.db', 'brain.db-wal', 'brain.db-shm', 'ingest-hook.log', 'version.json', '.installed-files.json']);
+const RUNTIME_FILES = new Set(['config.json', 'secrets.json', 'brain.db', 'brain.db-wal', 'brain.db-shm', 'ingest-hook.log', 'server.log', 'version.json', '.installed-files.json']);
 
 // ---------- args ----------
 const argv = process.argv.slice(2);
@@ -135,7 +135,7 @@ if (!flag('--no-shim')) {
     const bin = join(homedir(), '.local', 'bin');
     if (!DRY) {
       mkdirSync(bin, { recursive: true });
-      writeFileSync(join(bin, 'brain'), `#!/bin/sh\nD="${DIR}"\ncase "$1" in\n  ingest) exec node --no-warnings "$D/ingest.mjs" "$2";;\n  summarize) exec node --no-warnings "$D/summarize.mjs" "$2";;\n  version) exec cat "$D/version.json";;\n  *) exec node --no-warnings "$D/server.mjs" --open;;\nesac\n`, { mode: 0o755 });
+      writeFileSync(join(bin, 'brain'), `#!/bin/sh\nD="${DIR}"\ncase "$1" in\n  ingest) exec node --no-warnings "$D/ingest.mjs" "$2";;\n  summarize) exec node --no-warnings "$D/summarize.mjs" "$2";;\n  version) exec cat "$D/version.json";;\n  start|stop|restart|status|autostart) exec node --no-warnings "$D/service.mjs" "$@";;\n  *) exec node --no-warnings "$D/server.mjs" --open;;\nesac\n`, { mode: 0o755 });
     }
     info(`${join(bin, 'brain')} (cần ~/.local/bin trên PATH)`);
   }
@@ -149,13 +149,21 @@ if (!flag('--no-ingest') && !DRY) {
 }
 
 // ---------- 8. running server? ----------
-let running = false;
+let running = null;
 try {
   const port = JSON.parse(readFileSync(join(DIR, 'config.json'), 'utf8')).port ?? 4377;
-  running = (await fetch(`http://127.0.0.1:${port}/api/status`, { signal: AbortSignal.timeout(1000) })).ok;
+  const r = await fetch(`http://127.0.0.1:${port}/api/status`, { signal: AbortSignal.timeout(1000) });
+  if (r.ok) running = await r.json();
 } catch {}
+// A background server has no window to Ctrl+C → restart it ourselves.
+if (running?.background && !DRY) {
+  step('Khởi động lại server nền');
+  spawnSync(process.execPath, ['--no-warnings', join(DIR, 'service.mjs'), 'restart'], { cwd: DIR, stdio: 'inherit' });
+  running = null;
+}
 
 console.log(`\n✓ Cài đặt xong — Personal Brain ${version.version}${version.commit ? ` (${version.commit})` : ''}`);
-if (running) console.log('  ⚠ Server đang chạy bản cũ — tắt cửa sổ server (Ctrl+C) rồi chạy lại `brain` để dùng bản mới.');
-console.log('  Chạy dashboard: brain   →  http://localhost:4377');
+if (running) console.log('  ⚠ Server đang chạy bản cũ — gõ `brain restart` để dùng bản mới.');
+console.log('  Chạy dashboard: brain start (chạy nền) hoặc brain (trong cửa sổ này)  →  http://localhost:4377');
+console.log('  Tự chạy khi đăng nhập Windows: brain autostart on');
 console.log('  Tóm tắt AI: vào ⚙ Cài đặt để nhập API key (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible).');

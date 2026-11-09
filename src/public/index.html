@@ -701,7 +701,10 @@ $('#refresh').onclick = async () => {
 async function status() {
   const s = await api('/api/status').catch(() => null);
   if (s) { appState.hasKey = s.hasKey; $('#keybadge').style.display = s.hasKey ? 'none' : 'inline-block'; }
-  $('#status').textContent = !s ? 'server offline' : s.ingesting ? 'đang đọc dữ liệu…' : s.lastIngest ? `cập nhật ${new Date(s.lastIngest).toLocaleTimeString('vi-VN').slice(0, 5)}` : '';
+  const stale = s && s.version && s.installed && s.version !== s.installed;
+  $('#status').style.color = stale ? 'var(--warn)' : '';
+  $('#status').title = stale ? `Server chạy ${s.version}, bản đã cài ${s.installed} — gõ "brain restart" trong terminal` : '';
+  $('#status').textContent = !s ? 'server offline' : stale ? '⚠ server chạy bản cũ — gõ brain restart' : s.ingesting ? 'đang đọc dữ liệu…' : s.lastIngest ? `cập nhật ${new Date(s.lastIngest).toLocaleTimeString('vi-VN').slice(0, 5)}` : '';
 }
 let resizeT; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(route, 250); });
 status().then(route); setInterval(status, 15000);

@@ -8,6 +8,7 @@
 //   cleanupPeriodDays is left unchanged.
 import { existsSync, readFileSync, rmSync, writeFileSync, cpSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -19,6 +20,12 @@ const info = (m) => console.log(`  ${m}`);
 const norm = (p) => String(p ?? '').split('\\').join('/').toLowerCase();
 const ours = (cmd) => norm(cmd).includes(`${norm(DIR)}/hook-sessionend.mjs`);
 if (DRY) info('(dry-run: không thay đổi gì)');
+
+// background server + autostart (before the code is removed)
+const service = join(DIR, 'service.mjs');
+if (existsSync(service) && !DRY) {
+  for (const a of [['stop'], ['autostart', 'off']]) spawnSync(process.execPath, ['--no-warnings', service, ...a], { cwd: DIR, stdio: 'inherit' });
+}
 
 // hook
 const settingsPath = join(homedir(), '.claude', 'settings.json');
