@@ -1,71 +1,74 @@
-# Personal Brain — Plan thực hiện (bản tự build)
+# Personal Brain — implementation plan (self-built version)
 
-> Ngày lập: 2026-11-09 · Trạng thái: **v0.7.0 — v1 đã chạy được + 💡 Gợi ý tối ưu + chạy nền (`brain start`) + MCP server cho Claude Code + tìm kiếm FTS5** (dashboard local, đọc transcript Claude Code)
+> Created: 2026-11-09 · Status: **v0.7.0 — v1 working + 💡 optimization tips + background mode (`brain start`) + MCP server for Claude Code + FTS5 search** (local dashboard reading Claude Code transcripts)
 
-## 1. Mục tiêu
+## 1. Goals
 
-Một **bộ nhớ cá nhân** chạy local, trả lời được:
+A local **personal memory** that can answer:
 
-1. **Dự án**: tôi đang làm gì, đã làm gì, đã quyết định gì, knowledge liên quan đến từng dự án.
-2. **Thực tế dùng AI**: token, model, chi phí theo ngày / project / model / giờ trong ngày.
+1. **Projects**: what am I working on, what have I done, what did I decide, what knowledge belongs to each project.
+2. **Actual AI usage**: tokens, models, cost by day / project / model / hour of day.
 
-Không làm (v1): knowledge graph, vector search, ghi màn hình, sync đa máy, nguồn AI khác ngoài Claude Code.
+And makes that memory available to Claude Code itself (MCP), so past work can be recalled from any project.
 
-## 2. Thay đổi so với v0.4
+Out of scope (v1): knowledge graph, vector search, screen recording, multi-device sync, AI sources other than Claude Code.
 
-| v0.4 (kế hoạch) | v0.5 (thực tế) | Lý do |
+## 2. Changes from v0.4
+
+| v0.4 (planned) | v0.5 (actual) | Reason |
 | --- | --- | --- |
-| Hook `capture.mjs` ghi prompt/file vào `inbox.jsonl` | **Bỏ.** Đọc thẳng transcript `~/.claude/projects/**/*.jsonl` | Transcript đã có đủ: prompt, tool/file, token theo model, `cost-state` (chi phí USD do Claude Code tính) |
-| `remember.mjs` gọi `claude -p` cuối mỗi session | Tóm tắt **theo project, theo yêu cầu**, qua **API của provider tuỳ chọn** (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible) | Tóm tắt cả project hữu ích hơn từng session; chỉ bật khi đã đăng ký API key |
-| CLI `brain today/week/search` | **Dashboard web** `http://localhost:4377` | Cần trực quan: heatmap, timeline, biểu đồ chi phí |
-| Không dependency | 1 dependency: `@anthropic-ai/sdk` | Gọi Claude API bằng SDK chính thức |
+| `capture.mjs` hook writes prompts/files to `inbox.jsonl` | **Dropped.** Read transcripts `~/.claude/projects/**/*.jsonl` directly | Transcripts already contain everything: prompts, tools/files, tokens per model, `cost-state` (USD cost computed by Claude Code) |
+| `remember.mjs` calls `claude -p` at the end of each session | Summaries **per project, on demand**, via **the API of a chosen provider** (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible) | A whole-project summary is more useful than one per session; only enabled once an API key is registered |
+| CLI `brain today/week/search` | **Web dashboard** `http://localhost:4377` | Needs visuals: heatmap, timeline, cost charts |
+| No dependencies | 1 dependency: `@anthropic-ai/sdk` | Call the Claude API with the official SDK |
 
-## 3. Nguyên tắc
+## 3. Principles
 
-1. **Toàn bộ code `.mjs`** (ES Module, Node ≥ 22.5). SQLite dùng `node:sqlite` built-in (có FTS5). Chạy với `--no-warnings` vì `node:sqlite` còn nhãn experimental trên Node 22.
-2. **Nguồn sự thật = transcript Claude Code.** `brain.db` là bản lưu trữ: session đã đọc không bị xoá khi transcript gốc bị dọn.
-3. **Hook không làm hỏng phiên làm việc**: luôn `exit 0`, việc nặng chạy nền (`detached` + `unref()`).
-4. **Local, ngoài repo**: `%USERPROFILE%\.personal-brain\`, server chỉ bind `127.0.0.1`.
-5. **AI là tuỳ chọn**: không có API key thì mọi thống kê vẫn chạy, chỉ tắt chức năng tóm tắt.
+1. **All code is `.mjs`** (ES modules, Node ≥ 22.5). SQLite via built-in `node:sqlite` (with FTS5). Run with `--no-warnings` because `node:sqlite` is still flagged experimental on Node 22.
+2. **Source of truth = Claude Code transcripts.** `brain.db` is an archive: sessions already read are not lost when the original transcripts are cleaned up.
+3. **Hooks never break a session**: always `exit 0`, heavy work runs in the background (`detached` + `unref()`).
+4. **Local, outside the repo**: `%USERPROFILE%\.personal-brain\`, server binds to `127.0.0.1` only.
+5. **AI is optional**: without an API key all statistics still work; only summaries are disabled.
 
-## 4. Luồng hoạt động
+## 4. Flows
 
-### 4.1 Luồng dữ liệu tổng thể
+### 4.1 Overall data flow
 
 ```mermaid
 flowchart LR
-  T["~/.claude/projects/**/*.jsonl<br/>(transcript, subagents/, memory/*.md)"] --> I
-  H["SessionEnd hook<br/>hook-sessionend.mjs (chạy nền)"] --> I
-  I["ingest.mjs<br/>tăng dần theo chữ ký mtime/size"] --> DB[("brain.db")]
+  T["~/.claude/projects/**/*.jsonl<br/>(transcripts, subagents/, memory/*.md)"] --> I
+  H["SessionEnd hook<br/>hook-sessionend.mjs (background)"] --> I
+  I["ingest.mjs<br/>incremental by mtime/size signature"] --> DB[("brain.db")]
   DB --> S["server.mjs<br/>127.0.0.1:4377"]
   S --> UI["dashboard<br/>public/index.html"]
-  S -->|"khởi động + mỗi 10 phút + nút ↻"| I
-  S -->|"chỉ khi đã có API key"| SM["summarize.mjs"]
+  S -->|"on start + every 10 min + ↻ button"| I
+  S -->|"only with an API key"| SM["summarize.mjs"]
   SM --> P["providers.mjs<br/>Claude / OpenAI / Gemini / Azure / OpenAI-compatible"]
-  SM -->|"lưu kết quả"| DB
-  DB -->|"chỉ đọc"| M["mcp.mjs (stdio)<br/>brain_search / brain_project / brain_recent"]
-  M --> CC["Claude Code (mọi project)"]
+  SM -->|"store result"| DB
+  DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_project / brain_recent"]
+  M --> CC["Claude Code (any project)"]
 ```
 
-Sau mỗi lần ingest hoặc tóm tắt, chỉ mục `search_fts` (FTS5) được dựng lại toàn bộ từ `sessions`, `prompts`, `knowledge` và `summaries`. Với khoảng 1.200 dòng, việc này mất khoảng 0,4 giây.
+After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt from `sessions`, `prompts`, `knowledge` and `summaries`. At ~1,200 rows this takes about 0.4 s.
 
-### 4.2 Ingest tăng dần
+### 4.2 Incremental ingest
 
 ```mermaid
 flowchart TD
   A([ingest]) --> B{"--full?"}
-  B -- có --> B1["Xoá ingest_state"] --> C
-  B -- không --> C["Liệt kê transcript trong claudeProjectsDir"]
-  C --> D{"Chữ ký mtime/size<br/>khác ingest_state?"}
-  D -- không --> C
-  D -- có --> E["parseSession: prompt, tool, file, usage, cost-state<br/>(che secret)"]
+  B -- yes --> B1["Clear ingest_state"] --> C
+  B -- no --> C["List transcripts in claudeProjectsDir"]
+  C --> D{"mtime/size signature<br/>differs from ingest_state?"}
+  D -- no --> C
+  D -- yes --> E["parseSession: prompts, tools, files, usage, cost-state<br/>(redact secrets)"]
   E --> F["BEGIN · writeSession + ingest_state · COMMIT"]
-  F -- lỗi --> F1["ROLLBACK, ghi log, bỏ qua"] --> C
+  F -- error --> F1["ROLLBACK, log, skip"] --> C
   F --> C
-  C -- hết --> G["Map thư mục transcript → cwd"]
-  G --> H["estimateMissingCosts<br/>(session thiếu cost-state)"]
+  C -- done --> G["Map transcript dir → cwd"]
+  G --> H["estimateMissingCosts<br/>(sessions without cost-state)"]
   H --> K["ingestKnowledge (memory/*.md)"]
-  K --> Z([xong])
+  K --> R["rebuildSearchIndex (FTS5)"]
+  R --> Z([done])
 ```
 
 ### 4.3 SessionEnd hook
@@ -78,176 +81,195 @@ sequenceDiagram
   participant DB as brain.db
   CC->>H: SessionEnd
   H->>I: spawn detached + unref, log → ingest-hook.log
-  H-->>CC: exit 0 ngay (~0,2 giây)
-  I->>DB: ghi session vừa kết thúc
+  H-->>CC: exit 0 immediately (~0.2 s)
+  I->>DB: write the session that just ended
 ```
 
-### 4.4 Tóm tắt AI
+### 4.4 AI summary
 
 ```mermaid
 sequenceDiagram
-  actor U as Người dùng
+  actor U as User
   participant UI as Dashboard
   participant S as server.mjs
   participant SM as summarize.mjs
   participant P as Provider API
   participant DB as brain.db
-  U->>UI: bấm "Tóm tắt"
+  U->>UI: click "Tóm tắt" (Summarize)
   UI->>S: POST /api/summarize (x-brain: 1, Origin)
-  alt Origin / header sai
+  alt wrong Origin / header
     S-->>UI: 403 forbidden
-  else provider chưa có key/model
+  else provider has no key/model
     S-->>UI: 403 no_key
-  else project đang được tóm tắt
+  else project already being summarized
     S-->>UI: 409
   else
     S->>SM: summarizeProject(project)
-    SM->>DB: đọc ≤ 40 session gần nhất + memory
+    SM->>DB: read ≤ 40 most recent sessions + memory
     SM->>P: prompt + JSON schema
     P-->>SM: JSON (headline, current, done, decisions, knowledge, open)
-    SM->>DB: lưu summaries (+ token/chi phí)
+    SM->>DB: store in summaries (+ tokens/cost), rebuild search index
     S-->>UI: 200 content
   end
 ```
 
-## 5. Thư mục
+### 4.5 MCP server
+
+```mermaid
+sequenceDiagram
+  participant CC as Claude Code
+  participant M as mcp.mjs (stdio)
+  participant DB as brain.db
+  CC->>M: initialize, tools/list
+  M-->>CC: 3 read-only tools + instructions
+  CC->>M: tools/call brain_search {query}
+  M->>DB: search_fts MATCH (bm25)
+  M-->>CC: text: hits with project, date, excerpt
+```
+
+Launched by Claude Code per session (`claude mcp add --scope user`). The default project for `brain_project` is derived from the session's working directory (`CLAUDE_PROJECT_DIR` or cwd).
+
+## 5. Directory layout
 
 ```text
 %USERPROFILE%\.personal-brain\
-├─ config.json          # gom project, alias, exclude, model/effort/ngôn ngữ tóm tắt
-├─ lib.mjs              # đường dẫn, config, schema DB + migration, che secret, tên project
-├─ ingest.mjs           # transcript + memory files → brain.db
-├─ summarize.mjs        # tóm tắt 1 project bằng provider đang chọn
+├─ config.json          # project grouping, aliases, exclude, summary model/effort/language
+├─ lib.mjs              # paths, config, DB schema + migrations, secret redaction, project names
+├─ ingest.mjs           # transcripts + memory files → brain.db
+├─ summarize.mjs        # summarize one project with the selected provider
 ├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
-├─ secrets.mjs          # lưu API key theo từng provider, mã hoá Windows DPAPI
-├─ query.mjs            # truy vấn dùng chung: chỉ mục + tìm kiếm FTS5, tổng hợp project, session gần đây
-├─ server.mjs           # HTTP server + API JSON
-├─ mcp.mjs              # MCP server stdio chỉ đọc cho Claude Code (đăng ký bằng claude mcp add)
-├─ service.mjs          # brain start|stop|restart|status|autostart (chạy nền, HKCU Run)
-├─ hook-sessionend.mjs  # hook SessionEnd: chạy ingest nền rồi thoát ngay
-├─ public/index.html    # dashboard (JS thuần + SVG)
+├─ secrets.mjs          # per-provider API key storage, encrypted with Windows DPAPI
+├─ query.mjs            # shared queries: FTS5 index + search, project brief, recent sessions
+├─ server.mjs           # HTTP server + JSON API
+├─ mcp.mjs              # read-only stdio MCP server for Claude Code (registered with claude mcp add)
+├─ service.mjs          # brain start|stop|restart|status|autostart (background, HKCU Run)
+├─ hook-sessionend.mjs  # SessionEnd hook: start ingest in the background and exit immediately
+├─ public/index.html    # dashboard (plain JS + SVG)
 ├─ brain.cmd            # brain | brain start/stop/restart/status/autostart | brain ingest [--full] | brain summarize "<project>"
-├─ secrets.json         # API key đã mã hoá (không commit, không copy sang máy khác)
+├─ secrets.json         # encrypted API keys (never committed, not portable to other machines)
 ├─ brain.db             # SQLite
-├─ server.log           # log của server chạy nền (tự cắt khi > 5 MB)
-└─ ingest-hook.log      # log của hook
+├─ server.log           # background server log (truncated above 5 MB)
+└─ ingest-hook.log      # hook log
 ```
 
-## 6. Dữ liệu (`brain.db`)
+## 6. Data (`brain.db`)
 
-| Bảng | Nội dung | Nguồn |
+| Table | Contents | Source |
 | --- | --- | --- |
-| `sessions` | project, cwd, tiêu đề (`ai-title`), thời gian, số prompt, chi phí + nguồn chi phí (`reported`/`estimated`), dòng +/−, tool dùng, file sửa, tool lỗi, subagent | transcript |
-| `prompts` | prompt người dùng gõ (đã che secret, tối đa 1.500 ký tự) | transcript |
-| `usage` | mỗi lượt gọi API: model, token input/output/cache đọc/cache ghi, chi phí phân bổ | transcript |
-| `model_cost` | chi phí USD từng model trong từng session | `cost-state` |
-| `knowledge` | các file memory Claude đã lưu theo project | `~/.claude/projects/*/memory/*.md` |
-| `summaries` | tóm tắt AI theo project (JSON) + token/chi phí của lần tóm tắt | Claude API |
-| `ingest_state` | chữ ký mtime/size từng session để ingest tăng dần | — |
-| `search_fts` | chỉ mục FTS5 (unicode61, bỏ dấu, tự đổi `đ`→`d`); dữ liệu suy ra, dựng lại được bất cứ lúc nào | các bảng trên |
+| `sessions` | project, cwd, title (`ai-title`), times, prompt count, cost + cost source (`reported`/`estimated`), lines +/−, tools used, files edited, tool errors, subagents | transcript |
+| `prompts` | prompts the user typed (secrets redacted, max 1,500 chars) | transcript |
+| `usage` | one row per API call: model, input/output/cache-read/cache-write tokens, allocated cost | transcript |
+| `model_cost` | USD cost per model per session | `cost-state` |
+| `knowledge` | memory files Claude saved per project | `~/.claude/projects/*/memory/*.md` |
+| `summaries` | AI summary per project (JSON) + tokens/cost of that run | provider API |
+| `ingest_state` | mtime/size signature per session for incremental ingest | — |
+| `search_fts` | FTS5 index (unicode61, diacritics removed, `đ`→`d` folded by us); derived data, can be rebuilt any time | the tables above |
 
-**Chi phí:**
+**Cost:**
 
-- Lấy từ `cost-state` do Claude Code tự tính theo giá API niêm yết. Đây không phải số tiền thực trả nếu dùng gói subscription.
-- Chi phí mỗi session được chia xuống từng lượt gọi theo trọng số token, nên tổng theo ngày khớp đúng tổng của session (đã đối chiếu: chênh lệch 0).
-- Session thiếu `cost-state` được ước tính bằng đơn giá $/token học từ các session có `cost-state`, gắn nhãn "ước".
+- Taken from `cost-state`, which Claude Code computes at list API prices. This is not what you actually pay on a subscription plan.
+- Each session's cost is spread over its API calls by token weight, so daily totals match session totals exactly (verified: difference 0).
+- Sessions without `cost-state` are estimated with a $/token rate learned from sessions that have one, and labeled "ước" (estimated).
 
-**Gom project:** đường dẫn dưới `workspaceRoot`, cắt theo `projectDepth`. Ví dụ `clients/acme-app`: nhóm `clients` lấy 2 cấp. Các `aliases` gom thư mục tạm, ví dụ `tmp-*` vào `clients/acme-app`.
+**Project grouping:** paths under `workspaceRoot`, cut at `projectDepth`. Example `clients/acme-app`: the `clients` group takes 2 levels. `aliases` group temporary folders, e.g. `tmp-*` into `clients/acme-app`.
 
 ## 7. Dashboard
 
-**Tab Dự án** (tham khảo Linear/Asana Portfolio, GitHub contribution, Kanban, activity feed):
+UI labels are in Vietnamese; English meanings are given in parentheses.
 
-- **Trang tổng quan:**
-  - Ô số liệu: số project đang chạy, ngày làm việc trong 28 ngày, chi phí 30 ngày, số project đã có tóm tắt AI.
-  - Heatmap nhịp làm việc của mọi project.
-  - Bộ lọc theo trạng thái (Đang chạy ≤ 7 ngày / Chậm lại ≤ 21 / Tạm dừng ≤ 60 / Lưu trữ), theo nhóm khách hàng, theo tên.
-  - Thẻ project: câu mô tả, việc đang làm, biểu đồ nhỏ 28 ngày.
-- **Trang chi tiết:**
-  - Phần đầu: câu tóm tắt và 6 chỉ số (session, prompt, ngày làm việc, chi phí, dòng code, knowledge).
-  - Bảng Kanban **Đang làm / Còn mở / Quyết định**.
-  - Timeline theo tuần (session + việc ✅ đã xong; session ≤ 1 prompt gộp lại).
-  - Heatmap, knowledge, file sửa nhiều nhất theo thư mục, lịch sử prompt.
+**"Dự án" (Projects) tab** (inspired by Linear/Asana Portfolio, GitHub contributions, Kanban, activity feeds):
 
-**Tab AI usage:**
+- **Overview page:**
+  - Stat tiles: active projects, working days in the last 28 days, 30-day cost, projects with an AI summary.
+  - Activity heatmap across all projects.
+  - Filters by status ("Đang chạy" active ≤ 7 days / "Chậm lại" slowing ≤ 21 / "Tạm dừng" paused ≤ 60 / "Lưu trữ" archived), by client group, by name.
+  - Project cards: one-line description, current work, 28-day sparkline.
+- **Detail page:**
+  - Header: summary sentence and 6 stats (sessions, prompts, working days, cost, lines of code, knowledge).
+  - Kanban board **"Đang làm" (In progress) / "Còn mở" (Open) / "Quyết định" (Decisions)**.
+  - Weekly timeline (sessions + ✅ completed items; sessions with ≤ 1 prompt are collapsed).
+  - Heatmap, knowledge, most-edited files by folder, prompt history.
 
-- Ô số liệu: chi phí, token, session, prompt, tỉ lệ cache, dòng code, tool lỗi/subagent.
-- Biểu đồ: chi phí theo ngày (tách theo model), theo project, theo giờ trong ngày.
-- Bảng theo model; bảng session tốn nhiều nhất. Lọc theo 7/30/90 ngày/tất cả.
+**AI usage tab:**
 
-**Tab 💡 Gợi ý** (`GET /api/insights?days=`): luật cố định trong `TIP_RULES` (`src/server.mjs`), không gọi AI.
+- Stat tiles: cost, tokens, sessions, prompts, cache hit rate, lines of code, tool errors/subagents.
+- Charts: cost per day (split by model), per project, per hour of day.
+- Per-model table; most expensive sessions table. Filter by 7/30/90 days/all.
 
-| Kiểm tra | Ngưỡng | Gợi ý |
+**"💡 Gợi ý" (Tips) tab** (`GET /api/insights?days=`): fixed rules in `TIP_RULES` (`src/server.mjs`), no AI calls.
+
+| Check | Threshold | Suggestion |
 | --- | --- | --- |
-| Tỉ lệ Opus | ≥ 80% chi phí (cao ≥ 90%) | `opusplan`, `model: sonnet` cho command/skill; ước tiết kiệm từ giá/units thực tế Sonnet vs Opus |
-| Subagent | ≥ 20 trong kỳ | gán model rẻ cho agent, hạn chế fan-out |
-| Tool lỗi | ≥ 20/project hoặc ≥ 5/session | ghi lệnh đúng vào CLAUDE.md, allowlist quyền |
-| Cache hit | < 80% ở project ≥ $2 | tránh đổi model/CLAUDE.md giữa session, tránh nghỉ lâu |
-| Session dài | ≥ 40 prompt và ≥ $30 | `/clear`, `/compact`, handoff |
-| Prompt lặp | ≥ 3 lần (bỏ `/…`, text > 300 ký tự) | biến thành slash command / hook |
+| Opus share | ≥ 80% of cost (high ≥ 90%) | `opusplan`, `model: sonnet` for commands/skills; savings estimated from actual Sonnet vs Opus price/units |
+| Subagents | ≥ 20 in the period | assign a cheaper model to agents, limit fan-out |
+| Tool errors | ≥ 20/project or ≥ 5/session | write the correct commands into CLAUDE.md, allowlist permissions |
+| Cache hit | < 80% on a project ≥ $2 | avoid switching model/CLAUDE.md mid-session, avoid long pauses |
+| Long sessions | ≥ 40 prompts and ≥ $30 | `/clear`, `/compact`, handoff |
+| Repeated prompts | ≥ 3 times (ignoring `/…`, text > 300 chars) | turn into a slash command / hook |
 
-Số gợi ý mức "Ưu tiên cao" hiện thành badge trên tab.
+The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the tab.
 
-**⚙ Cài đặt:** đăng ký/kiểm tra/xoá API key; chọn model, effort, ngôn ngữ tóm tắt.
+**"⚙ Cài đặt" (Settings):** register/verify/delete API keys; choose model, effort, summary language.
 
-**Tìm kiếm:** dùng FTS5 trên tiêu đề session, prompt, knowledge và tóm tắt AI. Không phân biệt dấu, khớp đầu từ, xếp theo bm25. Nếu không có kết quả khớp mọi từ thì tìm kết quả khớp bất kỳ từ nào.
+**Search:** FTS5 over session titles, prompts, knowledge and AI summaries. Accent-insensitive, prefix matching, ranked by bm25. If no result matches every word, falls back to matching any word.
 
-## 8. Tóm tắt AI
+## 8. AI summaries
 
-- **Điều kiện:** chỉ bật khi provider đang chọn đã có API key và model. Nếu chưa, nút bị khoá và server trả 403.
-- **Provider hỗ trợ** (mỗi provider một key riêng, chọn 1 provider để dùng):
+- **Condition:** only enabled when the selected provider has an API key and a model. Otherwise the button is disabled and the server returns 403.
+- **Supported providers** (one key per provider, one provider active):
 
-| Provider | Cách gọi | Kiểm tra key / danh sách model | Ép JSON |
+| Provider | How it is called | Key check / model list | JSON enforcement |
 | --- | --- | --- | --- |
-| Anthropic (Claude) | `@anthropic-ai/sdk`, mặc định `claude-opus-5-5`, effort `medium`, `fallbacks: "default"` | `GET /v1/models` | structured output (`output_config.format`) |
-| OpenAI | REST `/v1/chat/completions` | `GET /v1/models` (lọc bỏ embedding/tts/image…) | `json_schema` → `json_object` → thường |
-| Google Gemini | REST `generateContent` | `GET /v1beta/models` (chỉ model hỗ trợ generateContent) | `responseSchema` → chỉ `application/json` |
-| Azure OpenAI | REST `/openai/deployments/{deployment}/chat/completions` (endpoint + API version) | danh sách deployment | như OpenAI |
-| OpenAI-compatible | REST `{baseUrl}/chat/completions` (OpenRouter, DeepSeek, Groq, Mistral, xAI, Ollama, LM Studio…), key tuỳ chọn | `GET {baseUrl}/models` | như OpenAI |
+| Anthropic (Claude) | `@anthropic-ai/sdk`, default `claude-opus-5-5`, effort `medium`, `fallbacks: "default"` | `GET /v1/models` | structured output (`output_config.format`) |
+| OpenAI | REST `/v1/chat/completions` | `GET /v1/models` (embedding/tts/image… filtered out) | `json_schema` → `json_object` → plain |
+| Google Gemini | REST `generateContent` | `GET /v1beta/models` (only models supporting generateContent) | `responseSchema` → `application/json` only |
+| Azure OpenAI | REST `/openai/deployments/{deployment}/chat/completions` (endpoint + API version) | deployment list | as OpenAI |
+| OpenAI-compatible | REST `{baseUrl}/chat/completions` (OpenRouter, DeepSeek, Groq, Mistral, xAI, Ollama, LM Studio…), key optional | `GET {baseUrl}/models` | as OpenAI |
 
-- **Model:** chọn từ danh sách lấy trực tiếp từ API của provider, không gõ cứng tên model.
-- **Lưu key:** key được kiểm tra bằng API danh sách model (không tốn token), rồi lưu mã hoá **Windows DPAPI** trong `secrets.json`. Server không bao giờ trả key ra trình duyệt.
-- **Dữ liệu gửi đi:** tối đa 40 session gần nhất (tiêu đề, vài prompt, file sửa) + các file memory của project.
-- **Kết quả:** headline, current, done (có ngày), decisions, knowledge, open; output của model được chuẩn hoá về đúng khuôn. Kèm số token; chi phí USD chỉ ước tính được cho model Claude.
-- **Đã kiểm tra:** key sai ở cả 5 provider bị từ chối với lỗi rõ ràng; trọn luồng tóm tắt chạy qua một server giả lập chuẩn OpenAI. Chưa chạy với key thật của provider nào.
+- **Model:** picked from the list fetched live from the provider's API; no hard-coded model names.
+- **Key storage:** the key is verified with the model-list API (no tokens spent), then stored encrypted with **Windows DPAPI** in `secrets.json`. The server never returns keys to the browser.
+- **Data sent:** up to the 40 most recent sessions (title, a few prompts, edited files) + the project's memory files.
+- **Result:** headline, current, done (with dates), decisions, knowledge, open; the model output is normalized to that shape. Includes token counts; USD cost can only be estimated for Claude models.
+- **Verified:** wrong keys are rejected with a clear error on all 5 providers; the full summary flow ran against a mock OpenAI-compatible server. Not yet run with a real key on any provider.
 
-## 9. Hook & lưu giữ dữ liệu
+## 9. Hook & data retention
 
-Đã cài trong `~/.claude/settings.json` (2026-11-09):
+Installed in `~/.claude/settings.json` (2026-11-09):
 
 ```json
 "SessionEnd": [{ "hooks": [{ "type": "command",
-  "command": "node --no-warnings \"<thư mục cài>/hook-sessionend.mjs\"", "timeout": 10 }] }],
+  "command": "node --no-warnings \"<install dir>/hook-sessionend.mjs\"", "timeout": 10 }] }],
 "cleanupPeriodDays": 365
 ```
 
-- Hook đưa session vừa kết thúc vào `brain.db` kể cả khi server không chạy. Mất khoảng 0,2 giây, chạy nền, luôn `exit 0`.
-- `cleanupPeriodDays` = 365: transcript được giữ 1 năm thay vì 30 ngày (mặc định cũ làm mất transcript của các project cũ).
-- Không cần hook `UserPromptSubmit` / `PostToolUse`: transcript đã chứa dữ liệu đó.
+- The hook puts the session that just ended into `brain.db` even when the server is not running. Takes about 0.2 s, runs in the background, always `exit 0`.
+- `cleanupPeriodDays` = 365: transcripts are kept for 1 year instead of 30 days (the old default lost transcripts of older projects).
+- No `UserPromptSubmit` / `PostToolUse` hooks needed: the transcript already contains that data.
 
-## 10. Privacy & bảo mật
+## 10. Privacy & security
 
-- Che secret (`api_key|token|password|secret|bearer`, `sk-…`, `ghp_…`, `AKIA…`, JWT) trước khi lưu prompt và knowledge.
-- `config.json → exclude`: project không ghi nhận.
-- Không lưu nội dung file hay output lệnh, chỉ lưu đường dẫn file.
-- Server chỉ nghe ở `127.0.0.1`. Request POST bắt buộc có header `x-brain: 1` và Origin là chính server (chặn CSRF từ trang web khác).
-- MCP server chỉ đọc và chỉ chạy qua stdio (không mở cổng). Kết quả tool đi vào ngữ cảnh của session Claude Code đang hỏi.
-- Tóm tắt AI gửi prompt/tiêu đề/memory của project lên Claude API. Với dự án khách hàng nhạy cảm, hãy thêm vào `exclude` hoặc không bấm tóm tắt.
+- Secrets (`api_key|token|password|secret|bearer`, `sk-…`, `ghp_…`, `AKIA…`, JWT) are redacted before prompts and knowledge are stored.
+- `config.json → exclude`: projects that are not recorded.
+- File contents and command output are never stored, only file paths.
+- The server listens on `127.0.0.1` only. POST requests require the `x-brain: 1` header and the server's own Origin (blocks CSRF from other websites).
+- The MCP server is read-only and runs over stdio only (no port). Tool results go into the context of the Claude Code session that asked.
+- AI summaries send project prompts/titles/memory to the provider API. For sensitive client projects, add them to `exclude` or do not run summaries.
 
-## 11. Trạng thái & lộ trình
+## 11. Status & roadmap
 
-| Bước | Việc | Trạng thái |
+| Step | Work | Status |
 | --- | --- | --- |
-| 1. Kiểm tra | `node:sqlite` + FTS5 trên Node v22.19.0; định dạng transcript, `cost-state` | ✅ |
-| 2. Ingest | transcript + subagents + memory files, tăng dần | ✅ 70 session, đối chiếu chi phí khớp |
-| 3. Dashboard | Dự án (portfolio + chi tiết), AI usage, 💡 Gợi ý tối ưu, tìm kiếm | ✅ |
-| 4. Tóm tắt AI | 5 provider (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), khoá bằng API key, ⚙ Cài đặt | ✅ code xong — **chưa chạy thử với key thật** |
-| 5. Hook & lưu giữ | SessionEnd + `cleanupPeriodDays` 365 | ✅ đã cài — xác nhận qua `ingest-hook.log` sau session kế tiếp |
-| 6. Brain cho Claude | MCP server chỉ đọc (`brain_search`, `brain_project`, `brain_recent`) + tìm kiếm FTS5 | ✅ smoke test qua stdio — chưa thử trong session Claude Code thật |
-| 7. (Sau) | Nút "Tóm tắt tất cả project đang chạy"; hook SessionStart chèn tóm tắt project; thêm nguồn GitHub Copilot, git commit | — |
+| 1. Validation | `node:sqlite` + FTS5 on Node v22.19.0; transcript format, `cost-state` | ✅ |
+| 2. Ingest | transcripts + subagents + memory files, incremental | ✅ 70 sessions, costs reconcile |
+| 3. Dashboard | Projects (portfolio + detail), AI usage, 💡 tips, search | ✅ |
+| 4. AI summaries | 5 providers (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), gated by API key, ⚙ Settings | ✅ code done — **not yet tried with a real key** |
+| 5. Hook & retention | SessionEnd + `cleanupPeriodDays` 365 | ✅ installed — confirmed via `ingest-hook.log` after the next session |
+| 6. Brain for Claude | read-only MCP server (`brain_search`, `brain_project`, `brain_recent`) + FTS5 search | ✅ smoke-tested over stdio, registered and connected — not yet tried inside a real Claude Code session |
+| 7. (Later) | "Summarize all active projects" button; SessionStart hook injecting the project summary; more sources (GitHub Copilot, git commits) | — |
 
-## 12. Cần chốt
+## 12. Open decisions
 
-1. ~~Ngôn ngữ cho script~~ → **Node.js, toàn bộ `.mjs`** (2026-11-09).
-2. ~~Ngôn ngữ của tóm tắt~~ → **Mặc định Tiếng Việt**, đổi được trong ⚙ Cài đặt.
-3. Project nào cần đưa vào `exclude` (dự án khách hàng nhạy cảm, không gửi lên Claude API)?
+1. ~~Script language~~ → **Node.js, all `.mjs`** (2026-11-09).
+2. ~~Summary language~~ → **Vietnamese by default**, changeable in ⚙ Settings.
+3. ~~Docs language~~ → **English** for all `*.md` (2026-11-10); UI stays Vietnamese.
+4. Which projects should go into `exclude` (sensitive client projects that must not be sent to an AI API)?

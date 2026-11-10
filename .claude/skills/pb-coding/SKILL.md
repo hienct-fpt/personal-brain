@@ -1,68 +1,76 @@
 ---
 name: pb-coding
-description: Kiến trúc và quy ước code của Personal Brain — dùng khi thêm tính năng, sửa ingest, thêm cột DB, thêm API endpoint, sửa dashboard, thêm config key hoặc thêm AI provider trong repo này.
+description: Architecture and code conventions of Personal Brain — use when adding a feature, changing ingest, adding a DB column, adding an API endpoint or MCP tool, changing the dashboard, adding a config key or adding an AI provider in this repo.
 ---
 
-# Coding trong Personal Brain
+# Coding in Personal Brain
 
-## Bản đồ code
+## Code map
 
 ```mermaid
 flowchart LR
   T["~/.claude/projects/**/*.jsonl"] --> I["src/ingest.mjs"]
   I --> DB[("brain.db<br/>schema: src/lib.mjs")]
-  DB --> S["src/server.mjs<br/>API JSON"]
-  S --> UI["src/public/index.html<br/>JS thuần + SVG"]
+  DB --> Q["src/query.mjs<br/>FTS5 search, project brief"]
+  Q --> S["src/server.mjs<br/>JSON API"]
+  Q --> M["src/mcp.mjs<br/>MCP stdio, read-only"]
+  S --> UI["src/public/index.html<br/>plain JS + SVG"]
   S --> SM["src/summarize.mjs"] --> P["src/providers.mjs"]
   H["src/hook-sessionend.mjs"] --> I
 ```
 
-| File | Chứa | Sửa khi |
+| File | Contains | Change it to |
 | --- | --- | --- |
-| `src/lib.mjs` | `DEFAULTS` config, `SCHEMA`, `openDb()` + migration, `redact()`, `projectOf()`, `isExcluded()`, `localDay()` | thêm config key, bảng/cột, quy tắc đặt tên project |
-| `src/ingest.mjs` | `listSessions` → `parseSession` (đọc JSONL) → `writeSession`; `estimateMissingCosts`; `ingestKnowledge`; `ingest()` | lấy thêm dữ liệu từ transcript |
-| `src/server.mjs` | hàm truy vấn `usage()`, `activity()`, `projects()`, `project()`, `search()`, `settings()`; router trong `createServer` | thêm/sửa API |
-| `src/query.mjs` | `rebuildSearchIndex()` (FTS5 `search_fts`), `search()`, `resolveProject()`, `projectBrief()`, `recent()` — dùng chung cho server + MCP | đổi tìm kiếm / nội dung trả cho agent |
-| `src/mcp.mjs` | MCP server stdio chỉ đọc: `TOOLS` + handler `brain_search/brain_project/brain_recent`; stdout chỉ dành cho JSON-RPC | thêm/sửa tool MCP (thêm kiểm tra trong `scripts/smoke.mjs`) |
-| `src/public/index.html` | CSS, helper chart (`stackedBars`, `hBars`, `heatmap`, `sparkline`), view `renderUsage/renderPortfolio/renderProjectDetail/renderSearch/renderSettings`, router hash `route()` | sửa giao diện |
-| `src/summarize.mjs` | `buildContext()` (prompt gửi AI), JSON schema kết quả, `normalize()`, `summarizeProject()` | đổi nội dung tóm tắt |
-| `src/providers.mjs` | `PROVIDERS` (metadata UI) + `impl` (`listModels`, `generate`) mỗi provider | thêm provider |
-| `scripts/install.mjs` | cài/nâng cấp, hook, shim `brain` | đổi cách cài |
+| `src/lib.mjs` | config `DEFAULTS`, `SCHEMA`, `openDb()` + migrations, `redact()`, `projectOf()`, `isExcluded()`, `localDay()` | add a config key, table/column, project-naming rule |
+| `src/ingest.mjs` | `listSessions` → `parseSession` (reads JSONL) → `writeSession`; `estimateMissingCosts`; `ingestKnowledge`; `ingest()` | pull more data from transcripts |
+| `src/server.mjs` | query functions `usage()`, `activity()`, `projects()`, `project()`, `search()`, `settings()`; router in `createServer` | add/change an API |
+| `src/query.mjs` | `rebuildSearchIndex()` (FTS5 `search_fts`), `search()`, `resolveProject()`, `projectBrief()`, `recent()` — shared by server + MCP | change search / what agents get back |
+| `src/mcp.mjs` | read-only stdio MCP server: `TOOLS` + handlers `brain_search/brain_project/brain_recent`; stdout is for JSON-RPC only | add/change an MCP tool (add a check in `scripts/smoke.mjs`) |
+| `src/public/index.html` | CSS, chart helpers (`stackedBars`, `hBars`, `heatmap`, `sparkline`), views `renderUsage/renderPortfolio/renderProjectDetail/renderSearch/renderSettings`, hash router `route()` | change the UI |
+| `src/summarize.mjs` | `buildContext()` (prompt sent to the AI), result JSON schema, `normalize()`, `summarizeProject()` | change summary content |
+| `src/providers.mjs` | `PROVIDERS` (UI metadata) + `impl` (`listModels`, `generate`) per provider | add a provider |
+| `scripts/install.mjs` | install/upgrade, hook, MCP registration, `brain` shim | change installation |
 
-## Công thức cho task thường gặp
+## Recipes for common tasks
 
-**Thêm cột / bảng**
-1. Thêm vào `SCHEMA` trong `src/lib.mjs` (bảng mới: `CREATE TABLE IF NOT EXISTS`).
-2. DB cũ: thêm migration trong `openDb()` theo mẫu `if (!cols.has('x')) db.exec('ALTER TABLE … ADD COLUMN x …')`.
-3. Ghi dữ liệu trong `writeSession()`; nếu cần dữ liệu cho session cũ → ghi chú người dùng chạy `brain ingest --full`.
-4. Không `DROP` bảng/cột chứa dữ liệu người dùng.
+**Add a column / table**
+1. Add it to `SCHEMA` in `src/lib.mjs` (new table: `CREATE TABLE IF NOT EXISTS`).
+2. Old DBs: add a migration in `openDb()` following `if (!cols.has('x')) db.exec('ALTER TABLE … ADD COLUMN x …')`.
+3. Write the data in `writeSession()`; if old sessions need it → tell the user to run `brain ingest --full`.
+4. Never `DROP` tables/columns holding user data.
+5. If the data should be searchable, add it to `rebuildSearchIndex()` in `src/query.mjs`.
 
-**Thêm API endpoint**
-1. Viết hàm truy vấn trong `src/server.mjs` (dùng helper `get`/`all`, tham số `?` — không nối chuỗi SQL với input).
-2. Thêm dòng router: GET đọc dữ liệu; POST tự động bị chặn nếu không `trusted()`.
-3. Thêm kiểm tra vào `scripts/smoke.mjs`.
+**Add an API endpoint**
+1. Write the query function in `src/server.mjs` (or `src/query.mjs` if MCP needs it too), using `get`/`all` with `?` parameters — never concatenate input into SQL.
+2. Add a router line: GET reads data; POST is blocked automatically unless `trusted()`.
+3. Add a check to `scripts/smoke.mjs`.
 
-**Sửa dashboard**
-- Một file duy nhất `src/public/index.html`, không framework. Escape mọi chuỗi từ dữ liệu bằng `esc()` trước khi chèn HTML.
-- Gọi POST bằng helper `post()` (tự thêm `x-brain: 1`).
-- Màu dùng CSS variable có sẵn (hỗ trợ dark mode qua `prefers-color-scheme`).
-- Route mới: thêm nhánh trong `route()` (hash `#/…`).
+**Add an MCP tool**
+1. Add the query to `src/query.mjs`, then an entry in `TOOLS` (name, description, `inputSchema`) and a handler in `HANDLERS` in `src/mcp.mjs`.
+2. Keep it read-only and return compact text (clip long fields — the result goes into Claude's context).
+3. Update the MCP checks in `scripts/smoke.mjs` (tool count, one call per tool) and the tool table in `README.md`.
 
-**Thêm config key**
-1. Default trong `DEFAULTS` (`src/lib.mjs`); nếu là đường dẫn → thêm vào `PATH_KEYS`.
-2. Mẫu + chú thích `_key` trong `src/config.example.json`.
-3. Bảng cấu hình trong `README.md`.
+**Change the dashboard**
+- Single file `src/public/index.html`, no framework. Escape every data string with `esc()` before inserting HTML.
+- Make POST calls with the `post()` helper (adds `x-brain: 1`).
+- Use the existing CSS variables for colors (dark mode via `prefers-color-scheme`).
+- New route: add a branch in `route()` (hash `#/…`).
 
-**Thêm AI provider**
-1. Metadata trong `PROVIDERS` (label, docs, keyPlaceholder, fields, effort?).
-2. `impl[id]` với `listModels({ key, settings })` và hàm sinh JSON; lỗi ném `ProviderError` với thông báo tiếng Việt.
-3. `providerReady()` nếu điều kiện "sẵn sàng" khác thường.
+**Add a config key**
+1. Default in `DEFAULTS` (`src/lib.mjs`); if it is a path → add it to `PATH_KEYS`.
+2. Sample + `_key` comment in `src/config.example.json`.
+3. Config table in `README.md`.
 
-## Quy ước
+**Add an AI provider**
+1. Metadata in `PROVIDERS` (label, docs, keyPlaceholder, fields, effort?).
+2. `impl[id]` with `listModels({ key, settings })` and a JSON-generating function; throw `ProviderError` with a Vietnamese message on errors.
+3. `providerReady()` if "ready" has unusual conditions.
 
-- ES module `.mjs`, chỉ dùng built-in Node (`node:fs`, `node:sqlite`, `fetch`…). Hỏi người dùng trước khi thêm dependency.
-- Code ngắn, hàm thuần; comment bằng tiếng Anh, text UI/log bằng tiếng Việt.
-- Thời gian lưu dạng epoch ms; ngày dạng `YYYY-MM-DD` theo giờ local (`localDay()`).
-- Đổi luồng hoạt động → cập nhật sơ đồ Mermaid trong `README.md` / `docs/PLAN.md`.
+## Conventions
 
-Xong code → làm theo skill `pb-testing`.
+- ES modules `.mjs`, Node built-ins only (`node:fs`, `node:sqlite`, `fetch`…). Ask the user before adding a dependency.
+- Short code, pure functions; comments and docs in English, UI/log text in Vietnamese.
+- Times stored as epoch ms; days as `YYYY-MM-DD` in local time (`localDay()`).
+- Changing a flow → update the Mermaid diagrams in `README.md` / `docs/PLAN.md`.
+
+When the code is done → follow the `pb-testing` skill.

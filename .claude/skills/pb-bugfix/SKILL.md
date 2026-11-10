@@ -1,60 +1,66 @@
 ---
 name: pb-bugfix
-description: Quy trình tìm và sửa lỗi trong Personal Brain — tái hiện, khoanh vùng theo tầng (transcript → ingest → DB → API → UI), sửa tận gốc, thêm kiểm tra chống tái phát. Dùng khi người dùng báo lỗi, số liệu sai, dashboard trống/vỡ, hook không chạy, tóm tắt AI lỗi.
+description: Process for finding and fixing bugs in Personal Brain — reproduce, isolate by layer (transcript → ingest → DB → API → UI / MCP), fix the root cause, add a regression check. Use when the user reports a bug, wrong numbers, an empty/broken dashboard, a hook that does not run, failing AI summaries, or MCP tools that fail.
 ---
 
-# Sửa lỗi Personal Brain
+# Fixing bugs in Personal Brain
 
 ```mermaid
 flowchart TD
-  A["1. Tái hiện"] --> B{"2. Lỗi ở tầng nào?"}
-  B -->|"số liệu sai / thiếu session"| I["Ingest + DB"]
-  B -->|"API 4xx/5xx, JSON sai"| S["server.mjs"]
-  B -->|"trang trắng, chart vỡ"| U["index.html"]
-  B -->|"tóm tắt lỗi"| P["summarize / providers"]
-  B -->|"session mới không vào DB"| H["Hook / cài đặt"]
-  I & S & U & P & H --> C["3. Sửa tận gốc"]
-  C --> D["4. Thêm kiểm tra vào smoke.mjs<br/>hoặc truy vấn bất biến"]
-  D --> E["5. npm test + kiểm lại kịch bản lỗi"]
+  A["1. Reproduce"] --> B{"2. Which layer?"}
+  B -->|"wrong numbers / missing sessions"| I["Ingest + DB"]
+  B -->|"API 4xx/5xx, wrong JSON"| S["server.mjs"]
+  B -->|"blank page, broken chart"| U["index.html"]
+  B -->|"summary fails"| P["summarize / providers"]
+  B -->|"new sessions not in DB"| H["Hook / install"]
+  B -->|"MCP tool fails / not connected"| M["mcp.mjs / query.mjs"]
+  I & S & U & P & H & M --> C["3. Fix the root cause"]
+  C --> D["4. Add a check to smoke.mjs<br/>or an invariant query"]
+  D --> E["5. npm test + re-run the failing scenario"]
 ```
 
-## 1. Tái hiện
+## 1. Reproduce
 
-- Hỏi/ghi rõ: bước làm, kết quả mong đợi, kết quả thật, `brain version`.
-- Tái hiện trên **bản dev** (`npm run smoke -- --keep`, cổng 4399), không trên bản cài 4377.
-- Lỗi chỉ có trên dữ liệu thật → đọc read-only: `npm run db -- --installed "<SELECT …>"`.
+- Ask for / write down: steps, expected result, actual result, `brain version`.
+- Reproduce on the **dev copy** (`npm run smoke -- --keep`, port 4399), not on the installed copy on 4377.
+- Bug only shows on real data → read it read-only: `npm run db -- --installed "<SELECT …>"`.
 
-## 2. Khoanh vùng theo tầng
+## 2. Isolate by layer
 
 **Ingest / DB** (`src/ingest.mjs`, `src/lib.mjs`)
-- So số liệu: `npm run db -- "SELECT id, project, title, n_prompts, cost_usd, cost_source FROM sessions WHERE project = '<p>' ORDER BY started_at DESC LIMIT 20"`.
-- Session thiếu: kiểm `ingest_state` có `session_id` chưa; transcript có trong `~/.claude/projects/<dir>/<id>.jsonl` không; project có bị `exclude` / `aliases` / `projectDepth` gom sai không (`projectOf()`).
-- Chi phí lệch: `cost_source = 'estimated'` nghĩa là transcript thiếu `cost-state`; xem `estimateMissingCosts()`.
-- Ingest tăng dần dựa vào chữ ký mtime/size → sửa logic parse xong phải chạy `npm run ingest -- --full`.
+- Compare numbers: `npm run db -- "SELECT id, project, title, n_prompts, cost_usd, cost_source FROM sessions WHERE project = '<p>' ORDER BY started_at DESC LIMIT 20"`.
+- Missing session: is its `session_id` in `ingest_state`? Is the transcript in `~/.claude/projects/<dir>/<id>.jsonl`? Is the project wrongly grouped by `exclude` / `aliases` / `projectDepth` (`projectOf()`)?
+- Cost mismatch: `cost_source = 'estimated'` means the transcript has no `cost-state`; see `estimateMissingCosts()`.
+- Incremental ingest relies on an mtime/size signature → after changing parse logic, run `npm run ingest -- --full`.
 
 **Server** (`src/server.mjs`)
-- `curl -s "http://127.0.0.1:4399/api/<endpoint>"` xem JSON thô. 403 ở POST = thiếu `x-brain: 1` hoặc Origin sai (đúng thiết kế).
-- Lỗi SQL thường do bảng/cột chưa migrate → kiểm `openDb()`.
+- `curl -s "http://127.0.0.1:4399/api/<endpoint>"` to see raw JSON. 403 on POST = missing `x-brain: 1` or wrong Origin (by design).
+- SQL errors are usually a table/column that was not migrated → check `openDb()`.
 
 **UI** (`src/public/index.html`)
-- Mở console trình duyệt. Lỗi thường gặp: dữ liệu `null` (project không có session), chia cho 0, chuỗi không qua `esc()`.
-- `npm run check` bắt lỗi cú pháp script trong HTML nhưng không bắt lỗi runtime.
+- Open the browser console. Common causes: `null` data (project without sessions), division by zero, strings not passed through `esc()`.
+- `npm run check` catches syntax errors in the HTML script but not runtime errors.
 
-**Tóm tắt AI** (`src/summarize.mjs`, `src/providers.mjs`)
-- 403 `no_key` = provider chưa có key/model. 409 = đang tóm tắt project đó.
-- Lỗi provider phải là `ProviderError` với thông báo rõ; kết quả bị cắt → kiểm giới hạn token.
-- Không gọi API thật bằng key người dùng khi chưa được đồng ý (tốn tiền).
+**Search / MCP** (`src/query.mjs`, `src/mcp.mjs`)
+- Wrong/missing search hits: check `search_fts` row counts per `kind`; the index is rebuilt after ingest/summarize (`rebuildSearchIndex()`).
+- Test the MCP server directly: pipe JSON-RPC lines into `node --no-warnings src/mcp.mjs` (see the MCP block in `scripts/smoke.mjs`). Anything other than JSON-RPC on stdout breaks the protocol.
+- Installed registration: `claude mcp get personal-brain` (read-only check).
 
-**Hook / cài đặt**
-- Log hook: `~/.personal-brain/ingest-hook.log`.
-- Kiểm `~/.claude/settings.json` → `hooks.SessionEnd` trỏ đúng `<thư mục cài>/hook-sessionend.mjs` (chỉ đọc, không sửa tay).
-- Bản cài cũ: `brain version` so với `git log -1`; sửa xong phải cài lại (`/pb-install`).
+**AI summary** (`src/summarize.mjs`, `src/providers.mjs`)
+- 403 `no_key` = provider has no key/model. 409 = that project is already being summarized.
+- Provider errors must be `ProviderError` with a clear message; truncated output → check token limits.
+- Never call a real API with the user's key without their consent (it costs money).
 
-## 3–5. Sửa và chặn tái phát
+**Hook / install**
+- Hook log: `~/.personal-brain/ingest-hook.log`.
+- Check that `~/.claude/settings.json` → `hooks.SessionEnd` points at `<install dir>/hook-sessionend.mjs` (read only, do not edit by hand).
+- Stale install: compare `brain version` with `git log -1`; after a fix, reinstall (`/pb-install`).
 
-- Sửa nguyên nhân, không che triệu chứng (vd không `?? 0` để giấu dữ liệu sai từ ingest).
-- Thêm assertion vào `scripts/smoke.mjs` hoặc ghi truy vấn bất biến trong mô tả commit.
-- `npm test`, rồi chạy lại đúng kịch bản lỗi ban đầu.
-- Commit dạng `fix: <mô tả ngắn>` + 1–2 câu nguyên nhân gốc.
+## 3–5. Fix and prevent regression
 
-Báo cáo cho người dùng: nguyên nhân gốc, đã sửa gì (file:dòng), đã kiểm gì, còn gì chưa kiểm (vd UI chưa mở trình duyệt, bản cài chưa cập nhật).
+- Fix the cause, do not mask the symptom (e.g. no `?? 0` to hide bad data coming from ingest).
+- Add an assertion to `scripts/smoke.mjs`, or record an invariant query in the commit message.
+- `npm test`, then re-run the exact original failing scenario.
+- Commit as `fix: <short description>` + 1–2 sentences on the root cause.
+
+Report to the user: root cause, what was changed (file:line), what was verified, what was not (e.g. UI not opened in a browser, installed copy not updated).

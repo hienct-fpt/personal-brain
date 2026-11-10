@@ -1,23 +1,26 @@
 # Personal Brain
 
-Dashboard chạy local, tổng hợp những gì bạn đã làm với **Claude Code**:
+A local dashboard that pulls together what you have done with **Claude Code**, plus a read-only MCP server so Claude Code itself can look things up in that history:
 
-- **Dự án**: đang làm gì, đã làm gì, quyết định, knowledge. Có heatmap nhịp làm việc, timeline theo tuần, bảng Kanban, và tóm tắt bằng AI.
-- **AI usage**: token, model, chi phí theo ngày / project / model / giờ trong ngày; tỉ lệ cache, tool lỗi, subagent.
-- **💡 Gợi ý tối ưu**: cảnh báo khi Opus chiếm phần lớn chi phí (kèm ước tính tiết kiệm nếu chuyển sang Sonnet), dùng nhiều subagent, tool lỗi nhiều, cache hit thấp, session dài tốn kém, prompt gõ lặp lại; mỗi mục có việc nên làm cụ thể.
+- **Projects**: what you are working on, what is done, decisions, knowledge. Includes an activity heatmap, a weekly timeline, a Kanban board and AI summaries.
+- **AI usage**: tokens, models, cost by day / project / model / hour of day; cache hit rate, tool errors, subagents.
+- **💡 Optimization tips**: warns when Opus dominates cost (with estimated savings from switching to Sonnet), heavy subagent use, many tool errors, low cache hit rate, long expensive sessions, repeated prompts; each item comes with a concrete action.
+- **Personal knowledge for Claude**: Claude Code can search your past sessions, prompts, memory files and AI summaries from any project via MCP.
 
-Dữ liệu đọc thẳng từ transcript của Claude Code (`~/.claude/projects`), lưu vào SQLite (`node:sqlite`) và **chỉ nằm trên máy của bạn**.
-Tóm tắt AI là tùy chọn: hỗ trợ Anthropic (Claude), OpenAI, Google Gemini, Azure OpenAI và các API tương thích OpenAI (OpenRouter, DeepSeek, Groq, Ollama…).
+Data is read straight from Claude Code transcripts (`~/.claude/projects`), stored in SQLite (`node:sqlite`) and **stays on your machine**.
+AI summaries are optional and support Anthropic (Claude), OpenAI, Google Gemini, Azure OpenAI and OpenAI-compatible APIs (OpenRouter, DeepSeek, Groq, Ollama…).
 
-## Yêu cầu
+The dashboard UI is in Vietnamese.
 
-- Node.js **>= 22.5** (cần module `node:sqlite`)
-- Claude Code đã từng chạy trên máy (đã có `~/.claude/projects`)
-- Windows: API key được mã hóa bằng DPAPI. macOS/Linux: key lưu dạng file `0600`.
+## Requirements
 
-## Cài đặt
+- Node.js **>= 22.5** (needs the `node:sqlite` module)
+- Claude Code has run on this machine before (`~/.claude/projects` exists)
+- Windows: API keys are encrypted with DPAPI. macOS/Linux: keys are stored in a `0600` file.
 
-Mã nguồn: <https://github.com/hienct-fpt/personal-brain>
+## Install
+
+Source: <https://github.com/hienct-fpt/personal-brain>
 
 Windows:
 
@@ -35,192 +38,197 @@ cd personal-brain
 node scripts/install.mjs
 ```
 
-Không có git: tải [file ZIP](https://github.com/hienct-fpt/personal-brain/archive/refs/heads/main.zip), giải nén rồi chạy `install.cmd` (hoặc `node scripts/install.mjs`) trong thư mục vừa giải nén. Cách này không nâng cấp bằng `git pull` được; khi có bản mới, tải lại ZIP rồi cài đè.
+Without git: download the [ZIP file](https://github.com/hienct-fpt/personal-brain/archive/refs/heads/main.zip), extract it and run `install.cmd` (or `node scripts/install.mjs`) in the extracted folder. This copy cannot be upgraded with `git pull`; for a new version, download the ZIP again and install over it.
 
-Script cài đặt làm các bước sau:
+The installer does the following:
 
-1. Kiểm tra Node.js / npm.
-2. Chép `src/` vào thư mục cài (mặc định `~/.personal-brain`), rồi chạy `npm ci --omit=dev`.
-3. Tạo `config.json` từ `config.example.json` nếu thư mục cài chưa có file này.
-4. Ghi `version.json` (phiên bản + git commit).
-5. Sửa `~/.claude/settings.json` (có backup `.bak`):
-   - thêm hook **SessionEnd**: lưu session vào `brain.db` ngay khi session kết thúc, kể cả khi dashboard không chạy;
-   - nâng `cleanupPeriodDays` lên ít nhất **365**, để Claude Code không xóa transcript sau 30 ngày.
-6. Đăng ký MCP server `personal-brain` (chỉ đọc) bằng `claude mcp add --scope user`, để Claude Code hỏi được brain. Bỏ qua nếu máy không có lệnh `claude`.
-7. Tạo lệnh `brain` trên PATH: Windows dùng `%LOCALAPPDATA%\Microsoft\WindowsApps\brain.cmd`, macOS/Linux dùng `~/.local/bin/brain`.
-8. Đọc transcript lần đầu.
+1. Checks Node.js / npm.
+2. Copies `src/` into the install directory (default `~/.personal-brain`), then runs `npm ci --omit=dev`.
+3. Creates `config.json` from `config.example.json` if the install directory has none.
+4. Writes `version.json` (version + git commit).
+5. Edits `~/.claude/settings.json` (with a `.bak` backup):
+   - adds a **SessionEnd** hook: each session is saved into `brain.db` as soon as it ends, even if the dashboard is not running;
+   - raises `cleanupPeriodDays` to at least **365**, so Claude Code does not delete transcripts after 30 days.
+6. Registers the read-only MCP server `personal-brain` with `claude mcp add --scope user`, so Claude Code can query the brain. Skipped if the `claude` command is not available.
+7. Puts a `brain` command on PATH: `%LOCALAPPDATA%\Microsoft\WindowsApps\brain.cmd` on Windows, `~/.local/bin/brain` on macOS/Linux.
+8. Reads the transcripts for the first time.
 
 ```mermaid
 flowchart TD
-  A([install.cmd / node scripts/install.mjs]) --> B{"Node >= 22.5,<br/>có node:sqlite, có npm?"}
-  B -- không --> X([Dừng, báo lỗi])
-  B -- có --> C["Chép src/ → thư mục cài<br/>(xoá file code cũ theo manifest)"]
+  A([install.cmd / node scripts/install.mjs]) --> B{"Node >= 22.5,<br/>node:sqlite, npm?"}
+  B -- no --> X([Stop with an error])
+  B -- yes --> C["Copy src/ → install dir<br/>(remove old code files via manifest)"]
   C --> D["npm ci --omit=dev"]
-  D --> E{"config.json đã có?"}
-  E -- không --> E1["Tạo từ config.example.json"] --> F
-  E -- có --> F["Ghi version.json"]
-  F --> G["Sửa ~/.claude/settings.json (backup .bak)<br/>hook SessionEnd + cleanupPeriodDays ≥ 365"]
-  G --> G2["claude mcp add personal-brain<br/>(scope user, chỉ đọc)"]
-  G2 --> H["Tạo lệnh brain trên PATH"]
-  H --> I["Ingest lần đầu"]
-  I --> J{"Server bản cũ đang chạy?"}
-  J -- có --> J1["Nhắc: Ctrl+C rồi chạy lại brain"] --> Z
-  J -- không --> Z([Xong])
+  D --> E{"config.json exists?"}
+  E -- no --> E1["Create from config.example.json"] --> F
+  E -- yes --> F["Write version.json"]
+  F --> G["Edit ~/.claude/settings.json (.bak backup)<br/>SessionEnd hook + cleanupPeriodDays ≥ 365"]
+  G --> G2["claude mcp add personal-brain<br/>(user scope, read-only)"]
+  G2 --> H["Put brain command on PATH"]
+  H --> I["First ingest"]
+  I --> J{"Old server running?"}
+  J -- "in background" --> J1["Restart it"] --> Z
+  J -- "in a window" --> J2["Remind: Ctrl+C, then run brain"] --> Z
+  J -- no --> Z([Done])
 ```
 
-| Tùy chọn | Ý nghĩa |
+| Option | Meaning |
 | --- | --- |
-| `--dir <path>` | Thư mục cài (mặc định `~/.personal-brain`) |
-| `--retention <days>` | Giá trị tối thiểu cho `cleanupPeriodDays` (mặc định 365; `0` = không sửa) |
-| `--no-hook` | Không đăng ký hook SessionEnd |
-| `--no-shim` | Không tạo lệnh `brain` |
-| `--no-mcp` | Không đăng ký MCP server `personal-brain` |
-| `--no-ingest` | Không đọc transcript sau khi cài |
-| `--dry-run` | Chỉ in ra những gì sẽ làm, không thay đổi gì |
+| `--dir <path>` | Install directory (default `~/.personal-brain`) |
+| `--retention <days>` | Minimum value for `cleanupPeriodDays` (default 365; `0` = leave unchanged) |
+| `--no-hook` | Do not register the SessionEnd hook |
+| `--no-shim` | Do not create the `brain` command |
+| `--no-mcp` | Do not register the `personal-brain` MCP server |
+| `--no-ingest` | Do not read transcripts after installing |
+| `--dry-run` | Only print what would happen, change nothing |
 
-**Nâng cấp** lên bản mới nhất trên GitHub. Chạy trong thư mục đã clone:
+**Upgrade** to the latest version on GitHub. Run in the cloned folder:
 
 ```sh
 git pull
 install.cmd                  # macOS/Linux: node scripts/install.mjs
 ```
 
-Chỉ các file code bị thay; `config.json`, `secrets.json`, `brain.db` và log được giữ nguyên.
-Nếu dashboard đang chạy, tắt nó (Ctrl+C) rồi chạy lại `brain`. Xem phiên bản đang cài bằng `brain version`.
+Only code files are replaced; `config.json`, `secrets.json`, `brain.db` and logs are kept.
+A dashboard running in the background is restarted automatically; one running in a terminal window must be stopped (Ctrl+C) and started again with `brain`. Check the installed version with `brain version`.
 
-**Gỡ cài đặt**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) gỡ hook, MCP server `personal-brain` và lệnh `brain`, xóa code nhưng giữ dữ liệu. Thêm `--purge` để xóa luôn dữ liệu.
-Sau đó có thể xóa thư mục đã clone.
+**Uninstall**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) removes the hook, the `personal-brain` MCP server and the `brain` command, and deletes the code but keeps your data. Add `--purge` to delete the data too.
+You can then delete the cloned folder.
 
 ```mermaid
 flowchart LR
-  subgraph up["Nâng cấp"]
-    U1[git pull] --> U2[install.cmd] --> U3["Thay file code<br/>giữ config.json, secrets.json, brain.db, log"] --> U4["Ctrl+C server cũ → brain"]
+  subgraph up["Upgrade"]
+    U1[git pull] --> U2[install.cmd] --> U3["Replace code files<br/>keep config.json, secrets.json, brain.db, logs"] --> U4["brain restart"]
   end
-  subgraph rm["Gỡ cài đặt"]
-    R1[uninstall.cmd] --> R2["Gỡ hook SessionEnd<br/>+ MCP server + lệnh brain"] --> R3{"--purge?"}
-    R3 -- không --> R4["Xoá code, giữ dữ liệu"]
-    R3 -- có --> R5["Xoá toàn bộ thư mục cài"]
+  subgraph rm["Uninstall"]
+    R1[uninstall.cmd] --> R2["Remove SessionEnd hook<br/>+ MCP server + brain command"] --> R3{"--purge?"}
+    R3 -- no --> R4["Delete code, keep data"]
+    R3 -- yes --> R5["Delete the whole install dir"]
   end
 ```
 
-## Sử dụng
+## Usage
 
 ```text
-brain                      mở dashboard trong cửa sổ terminal này  →  http://localhost:4377
-brain start                chạy dashboard ở nền (không cần giữ cửa sổ; log: server.log trong thư mục cài)
-brain stop | restart       tắt / khởi động lại server (sau khi nâng cấp: brain restart)
-brain status               server có chạy không, đang chạy bản nào, có tự chạy khi đăng nhập không
-brain autostart on|off     tự chạy nền khi đăng nhập Windows
-brain ingest [--full]      đọc transcript mới (--full: đọc lại tất cả)
-brain summarize "<proj>"   tóm tắt AI cho 1 project
-brain version              phiên bản đang cài
+brain                      open the dashboard in this terminal window  →  http://localhost:4377
+brain start                run the dashboard in the background (no window needed; log: server.log in the install dir)
+brain stop | restart       stop / restart the server (after upgrading: brain restart)
+brain status               is the server running, which version, does it start at logon
+brain autostart on|off     start in the background at Windows logon
+brain ingest [--full]      read new transcripts (--full: re-read everything)
+brain summarize "<proj>"   AI summary for one project
+brain version              installed version
 ```
 
-**Tìm kiếm** (ô tìm trên dashboard): dùng SQLite FTS5 trên tiêu đề session, prompt, knowledge và tóm tắt AI. Không phân biệt dấu ("quyet dinh" khớp "quyết định"), khớp đầu từ, xếp theo độ liên quan.
+**Search** (search box on the dashboard): SQLite FTS5 over session titles, prompts, knowledge and AI summaries. Accent-insensitive ("quyet dinh" matches "quyết định"), prefix matching, ranked by relevance.
 
-### Hỏi brain ngay trong Claude Code (MCP)
+### Ask the brain from Claude Code (MCP)
 
-Bộ cài đăng ký MCP server `personal-brain` (scope user, chỉ đọc) để Claude Code ở **bất kỳ project nào** tra được lịch sử làm việc của bạn:
+The installer registers the MCP server `personal-brain` (user scope, read-only), so Claude Code in **any project** can look up your work history:
 
-| Tool | Dùng khi hỏi kiểu | Trả về |
+| Tool | For questions like | Returns |
 | --- | --- | --- |
-| `brain_search(query, project?, kinds?, limit?)` | "lần trước tôi xử lý lỗi CSRF thế nào?" | prompt / session / knowledge / tóm tắt AI khớp nhất, kèm đoạn trích và ngày |
-| `brain_project(name?)` | "dự án X đang đến đâu, đã quyết định gì?" | tóm tắt AI, knowledge, session gần đây, file hay sửa, prompt gần nhất. Bỏ trống `name` = project hiện tại |
-| `brain_recent(days?, project?)` | "tuần này tôi làm gì?" | session theo ngày, kèm số prompt và chi phí |
+| `brain_search(query, project?, kinds?, limit?)` | "how did I fix the CSRF bug last time?" | best-matching prompts / sessions / knowledge / AI summaries, with excerpt and date |
+| `brain_project(name?)` | "where is project X at, what did we decide?" | AI summary, knowledge, recent sessions, most-edited files, latest prompts. Empty `name` = current project |
+| `brain_recent(days?, project?)` | "what did I work on this week?" | sessions grouped by day, with prompt count and cost |
 
-Chỉ cần hỏi bình thường trong Claude Code, Claude tự gọi tool khi cần. Kiểm tra bằng `claude mcp get personal-brain` hoặc `/mcp` trong Claude Code.
-Đăng ký tay (khi cài với `--no-mcp` hoặc máy không có lệnh `claude` lúc cài):
+Just ask normally in Claude Code; Claude calls the tools when needed. Check with `claude mcp get personal-brain` or `/mcp` inside Claude Code.
+Register manually (if you installed with `--no-mcp`, or `claude` was not available at install time):
 
 ```sh
-claude mcp add --scope user personal-brain -- node --no-warnings "<thư mục cài>/mcp.mjs"
+claude mcp add --scope user personal-brain -- node --no-warnings "<install dir>/mcp.mjs"
 ```
 
-`brain_project` trả kết quả đầy đủ nhất khi project đã có tóm tắt AI (`brain summarize "<project>"`).
-Lưu ý: kết quả tool được đưa vào ngữ cảnh của Claude, tức là đi qua Claude API như mọi nội dung khác trong session.
+`brain_project` gives the richest answer once the project has an AI summary (`brain summarize "<project>"`).
+Note: tool results go into Claude's context, i.e. through the Claude API like everything else in the session.
 
-Luồng dữ liệu:
+Data flow:
 
 ```mermaid
 flowchart LR
-  T["Transcript Claude Code<br/>~/.claude/projects"] --> I["ingest.mjs"]
-  H["Hook SessionEnd"] --> I
-  I --> DB[("brain.db<br/>+ chỉ mục FTS5")]
+  T["Claude Code transcripts<br/>~/.claude/projects"] --> I["ingest.mjs"]
+  H["SessionEnd hook"] --> I
+  I --> DB[("brain.db<br/>+ FTS5 index")]
   DB --> S["server.mjs<br/>127.0.0.1:4377"] --> UI["Dashboard"]
-  S -->|"khi mở + định kỳ + nút ↻"| I
-  S -->|"tuỳ chọn"| AI["Tóm tắt AI<br/>(provider đã chọn)"]
-  DB --> M["mcp.mjs (stdio, chỉ đọc)"] --> CC["Claude Code<br/>brain_search / brain_project / brain_recent"]
+  S -->|"on start + periodically + ↻ button"| I
+  S -->|"optional"| AI["AI summary<br/>(selected provider)"]
+  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code<br/>brain_search / brain_project / brain_recent"]
 ```
 
-Để dùng tóm tắt AI:
+To use AI summaries (in the dashboard's **⚙ Cài đặt** / Settings tab):
 
 ```mermaid
 flowchart LR
-  A["⚙ Cài đặt"] --> B["Chọn provider"] --> C["Nhập API key"] --> D["Lấy danh sách model"] --> E["Lưu & kiểm tra"] --> F["Dùng provider này"]
+  A["⚙ Settings"] --> B["Choose a provider"] --> C["Enter API key"] --> D["Fetch model list"] --> E["Save & verify"] --> F["Use this provider"]
 ```
 
-## Cấu hình (`config.json` trong thư mục cài)
+## Configuration (`config.json` in the install dir)
 
-| Khóa | Ý nghĩa |
+| Key | Meaning |
 | --- | --- |
-| `workspaceRoot` | Thư mục chứa các project (mặc định `~/workspace`) |
-| `projectDepth` | Số cấp thư mục tạo thành 1 project, ví dụ `{ "*": 1, "clients": 2 }` → `clients/acme-app` |
-| `aliases` | `[{ "match": "<regex trên cwd>", "project": "<tên>" }]` để gom thư mục tạm vào một project |
-| `exclude` | Prefix tên project không ghi nhận và không gửi lên AI |
-| `port`, `refreshMinutes` | Cổng của server, chu kỳ tự đọc transcript |
+| `workspaceRoot` | Folder containing your projects (default `~/workspace`) |
+| `projectDepth` | How many folder levels make up a project, e.g. `{ "*": 1, "clients": 2 }` → `clients/acme-app` |
+| `aliases` | `[{ "match": "<regex on cwd>", "project": "<name>" }]` to group temporary folders into one project |
+| `exclude` | Project-name prefixes that are not recorded and never sent to an AI |
+| `port`, `refreshMinutes` | Server port, interval for re-reading transcripts |
 
-## Phát triển
+## Development
 
 ```bat
 git clone https://github.com/hienct-fpt/personal-brain.git
 cd personal-brain
 npm install
-npm run dev        :: chạy server từ src/ (dữ liệu dev tạo trong src/, đã gitignore)
-npm run check      :: kiểm tra cú pháp toàn bộ .mjs, script dashboard, JSON
-npm run smoke      :: chạy server dev ở cổng 4399, gọi mọi API, kiểm CSRF rồi tắt (--keep: giữ server chạy)
-npm test           :: check + smoke — chạy trước khi commit
-npm run db -- "SELECT …"   :: query read-only DB dev (--installed: DB đang cài, --tables, --schema <bảng>)
-install.cmd        :: cài bản đang sửa vào ~/.personal-brain
+npm run dev        :: run the server from src/ (dev data is created in src/, gitignored)
+npm run check      :: syntax-check every .mjs, the dashboard script, JSON
+npm run smoke      :: dev server on port 4399, call every API, check CSRF and the MCP server, then stop (--keep: leave it running)
+npm test           :: check + smoke — run before committing
+npm run db -- "SELECT …"   :: read-only query on the dev DB (--installed: installed DB, --tables, --schema <table>)
+install.cmd        :: install the working copy into ~/.personal-brain
 ```
 
-Làm việc với Claude Code: `CLAUDE.md` mô tả quy tắc của repo. Trong `.claude/` có:
+Working with Claude Code: `CLAUDE.md` describes the repo rules. `.claude/` contains:
 
-| Loại | Tên | Dùng khi |
+| Type | Name | Use for |
 | --- | --- | --- |
-| Skill | `pb-coding` | thêm tính năng: bản đồ code, công thức thêm cột DB / API / config / provider |
-| Skill | `pb-testing` | kiểm chứng thay đổi: check, smoke, kiểm dữ liệu, UI, installer |
-| Skill | `pb-bugfix` | sửa lỗi: tái hiện, khoanh vùng theo tầng, chặn tái phát |
-| Command | `/pb-check` | chạy `npm test` + xem git status |
-| Command | `/pb-feature <mô tả>` | làm tính năng end-to-end |
-| Command | `/pb-fix <lỗi>` | sửa lỗi theo quy trình |
-| Command | `/pb-db <câu hỏi / SQL>` | hỏi dữ liệu trong `brain.db` |
-| Command | `/pb-install` | test rồi cài bản đang sửa |
+| Skill | `pb-coding` | adding features: code map, recipes for DB columns / APIs / MCP tools / config / providers |
+| Skill | `pb-testing` | verifying changes: check, smoke, data, UI, installer |
+| Skill | `pb-bugfix` | fixing bugs: reproduce, isolate by layer, prevent regressions |
+| Command | `/pb-check` | run `npm test` + show git status |
+| Command | `/pb-feature <description>` | build a feature end-to-end |
+| Command | `/pb-fix <bug>` | fix a bug following the process |
+| Command | `/pb-db <question / SQL>` | query `brain.db` |
+| Command | `/pb-install` | test, then install the working copy |
 | Command | `/pb-release <patch\|minor\|x.y.z>` | bump version, tag, push |
 
-Cấu trúc:
+Layout:
 
 ```text
 src/
-  lib.mjs              config, schema DB, che secret, đặt tên project
-  ingest.mjs           transcript + memory files → brain.db
+  lib.mjs              config, DB schema, secret redaction, project naming
+  ingest.mjs           transcripts + memory files → brain.db
+  query.mjs            shared queries: FTS5 index + search, project brief, recent sessions
   server.mjs           HTTP server + API
-  summarize.mjs        tóm tắt project bằng provider đang chọn
+  mcp.mjs              read-only MCP server (stdio) for Claude Code
+  service.mjs          brain start|stop|restart|status|autostart
+  summarize.mjs        project summary with the selected provider
   providers.mjs        Anthropic SDK, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible
-  secrets.mjs          lưu API key (DPAPI trên Windows)
-  hook-sessionend.mjs  hook SessionEnd → chạy ingest nền
-  public/index.html    dashboard (JS thuần + SVG)
-  brain.cmd            lệnh brain
-  config.example.json  config mẫu
+  secrets.mjs          API key storage (DPAPI on Windows)
+  hook-sessionend.mjs  SessionEnd hook → background ingest
+  public/index.html    dashboard (plain JS + SVG)
+  brain.cmd            the brain command
+  config.example.json  sample config
 scripts/  install.mjs, uninstall.mjs, check.mjs, smoke.mjs, db.mjs
-docs/PLAN.md           kế hoạch và quyết định thiết kế
+docs/PLAN.md           plan and design decisions
 ```
 
-## Bảo mật
+## Security
 
-- Server chỉ nghe ở `127.0.0.1`. Request POST phải có header `x-brain: 1` và Origin là chính server (chống CSRF).
-- API key không bao giờ được gửi ra trình duyệt. Secret trong prompt bị che trước khi lưu.
-- Tóm tắt AI gửi tiêu đề session, prompt và memory của project tới provider bạn chọn. Thêm project nhạy cảm vào `exclude` để chặn việc này.
+- The server listens on `127.0.0.1` only. POST requests need the `x-brain: 1` header and the server's own Origin (CSRF protection).
+- API keys are never sent to the browser. Secrets in prompts are redacted before storage.
+- The MCP server is read-only and talks over stdio only (no network port).
+- AI summaries send session titles, prompts and project memory to the provider you choose. Add sensitive projects to `exclude` to prevent this.
 
-## Báo lỗi & góp ý
+## Bugs & feedback
 
-Tạo issue tại <https://github.com/hienct-fpt/personal-brain/issues>. Kèm phiên bản (`brain version`), hệ điều hành, phiên bản Node.js và log lỗi nếu có (`ingest-hook.log` trong thư mục cài).
-Trước khi gửi, kiểm tra log không chứa prompt hay đường dẫn nhạy cảm.
+Open an issue at <https://github.com/hienct-fpt/personal-brain/issues>. Include the version (`brain version`), OS, Node.js version and any error log (`ingest-hook.log` / `server.log` in the install dir).
+Before sending, make sure the log contains no sensitive prompts or paths.

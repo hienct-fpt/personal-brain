@@ -1,9 +1,9 @@
 ---
-description: Kiểm tra nhanh toàn repo — syntax + smoke test server thật (cổng 4399) + trạng thái git
+description: Quick whole-repo check — syntax + smoke test against a real server (port 4399) + git status
 allowed-tools: Bash(npm test:*), Bash(npm run check:*), Bash(npm run smoke:*), Bash(git status:*), Bash(git diff:*)
 ---
 
-Chạy `npm test` (check + smoke). Sau đó `git status --short`.
+Run `npm test` (check + smoke), then `git status --short`.
 
-Báo cáo ngắn: tầng nào pass/fail, lỗi cụ thể (file:dòng) nếu có, và các file đang thay đổi.
-Nếu fail, đề xuất nguyên nhân dựa trên diff hiện tại — chưa tự sửa trừ khi người dùng bảo.
+Short report: which layer passed/failed, the specific error (file:line) if any, and the files currently changed.
+If something fails, suggest a cause based on the current diff — do not fix it unless the user asks.

@@ -1,14 +1,14 @@
 ---
-description: Hỏi dữ liệu trong brain.db (read-only) — viết SQL từ câu hỏi tiếng Việt hoặc chạy SQL trực tiếp
-argument-hint: <câu hỏi hoặc SELECT …> [--installed]
+description: Query brain.db (read-only) — write SQL from a natural-language question or run SQL directly
+argument-hint: <question or SELECT …> [--installed]
 allowed-tools: Bash(npm run db:*), Bash(node --no-warnings scripts/db.mjs:*)
 ---
 
-Yêu cầu: $ARGUMENTS
+Request: $ARGUMENTS
 
-- Mặc định dùng DB dev (`src/brain.db`). Nếu yêu cầu có `--installed` hoặc nói "dữ liệu thật / bản cài", thêm `--installed`.
-- Nếu chưa rõ cột, chạy `npm run db -- --tables` và `npm run db -- --schema <bảng>` trước.
-- Nếu là câu hỏi tự nhiên, viết câu SELECT tương ứng (thời gian là epoch ms; cột `day` dạng YYYY-MM-DD), rồi chạy `npm run db -- "<SQL>"`.
-- Chỉ dùng SELECT/PRAGMA (DB mở read-only).
+- Use the dev DB (`src/brain.db`) by default. If the request contains `--installed` or mentions "real data / the installed copy", add `--installed`.
+- If the columns are unclear, run `npm run db -- --tables` and `npm run db -- --schema <table>` first.
+- For a natural-language question, write the matching SELECT (times are epoch ms; the `day` column is YYYY-MM-DD), then run `npm run db -- "<SQL>"`.
+- SELECT/PRAGMA only (the DB is opened read-only).
 
-Trả lời: câu SQL đã chạy + kết quả tóm gọn + nhận xét ngắn nếu số liệu bất thường. Không dán nguyên văn prompt dài của người dùng.
+Answer with: the SQL that was run + a compact result + a short note if the numbers look unusual. Do not paste the user's long prompts verbatim.

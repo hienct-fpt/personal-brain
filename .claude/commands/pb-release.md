@@ -1,14 +1,14 @@
 ---
-description: Phát hành phiên bản mới — bump version, cập nhật PLAN, test, commit, tag, push lên GitHub
+description: Release a new version — bump version, update PLAN, test, commit, tag, push to GitHub
 argument-hint: <patch|minor|major|x.y.z>
 ---
 
-Phiên bản: $ARGUMENTS (mặc định `patch`)
+Version: $ARGUMENTS (default `patch`)
 
-1. Kiểm `git status` sạch ngoài các thay đổi dự kiến; đang ở `main`.
-2. `npm test` phải pass.
-3. Tính version mới từ `package.json`; cập nhật `version` trong `package.json` và `package-lock.json` (`npm version <x> --no-git-tag-version`).
-4. Cập nhật dòng trạng thái đầu `docs/PLAN.md` nếu cần; liệt kê thay đổi từ `git log <tag cũ>..HEAD --oneline`.
-5. **Hỏi người dùng xác nhận** version + danh sách thay đổi trước khi commit/push (repo public).
-6. Commit `release: vX.Y.Z` với `-c user.name=hienct-fpt -c user.email=hienct-fpt@users.noreply.github.com`, tạo tag `vX.Y.Z`, `git push --follow-tags`.
-7. Kiểm không có thông tin cá nhân / tên dự án khách hàng trong diff trước khi push.
+1. Check that `git status` is clean apart from expected changes, and that you are on `main`.
+2. `npm test` must pass.
+3. Compute the new version from `package.json`; update `version` in `package.json` and `package-lock.json` (`npm version <x> --no-git-tag-version`).
+4. Update the status line at the top of `docs/PLAN.md` if needed; list changes from `git log <previous tag>..HEAD --oneline`.
+5. **Ask the user to confirm** the version + change list before committing/pushing (public repo).
+6. Commit `release: vX.Y.Z` with `-c user.name=hienct-fpt -c user.email=hienct-fpt@users.noreply.github.com`, create tag `vX.Y.Z`, `git push --follow-tags`.
+7. Check the diff contains no personal information / client project names before pushing.
