@@ -1,6 +1,6 @@
 # Personal Brain — Plan thực hiện (bản tự build)
 
-> Ngày lập: 2026-11-09 · Trạng thái: **v0.6.2 — v1 đã chạy được + 💡 Gợi ý tối ưu + chạy nền (`brain start`)** (dashboard local, đọc transcript Claude Code)
+> Ngày lập: 2026-11-09 · Trạng thái: **v0.7.0 — v1 đã chạy được + 💡 Gợi ý tối ưu + chạy nền (`brain start`) + MCP server cho Claude Code + tìm kiếm FTS5** (dashboard local, đọc transcript Claude Code)
 
 ## 1. Mục tiêu
 
