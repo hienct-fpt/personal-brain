@@ -46,8 +46,9 @@ Script cài đặt làm các bước sau:
 5. Sửa `~/.claude/settings.json` (có backup `.bak`):
    - thêm hook **SessionEnd**: lưu session vào `brain.db` ngay khi session kết thúc, kể cả khi dashboard không chạy;
    - nâng `cleanupPeriodDays` lên ít nhất **365**, để Claude Code không xóa transcript sau 30 ngày.
-6. Tạo lệnh `brain` trên PATH: Windows dùng `%LOCALAPPDATA%\Microsoft\WindowsApps\brain.cmd`, macOS/Linux dùng `~/.local/bin/brain`.
-7. Đọc transcript lần đầu.
+6. Đăng ký MCP server `personal-brain` (chỉ đọc) bằng `claude mcp add --scope user`, để Claude Code hỏi được brain. Bỏ qua nếu máy không có lệnh `claude`.
+7. Tạo lệnh `brain` trên PATH: Windows dùng `%LOCALAPPDATA%\Microsoft\WindowsApps\brain.cmd`, macOS/Linux dùng `~/.local/bin/brain`.
+8. Đọc transcript lần đầu.
 
 ```mermaid
 flowchart TD
@@ -59,7 +60,8 @@ flowchart TD
   E -- không --> E1["Tạo từ config.example.json"] --> F
   E -- có --> F["Ghi version.json"]
   F --> G["Sửa ~/.claude/settings.json (backup .bak)<br/>hook SessionEnd + cleanupPeriodDays ≥ 365"]
-  G --> H["Tạo lệnh brain trên PATH"]
+  G --> G2["claude mcp add personal-brain<br/>(scope user, chỉ đọc)"]
+  G2 --> H["Tạo lệnh brain trên PATH"]
   H --> I["Ingest lần đầu"]
   I --> J{"Server bản cũ đang chạy?"}
   J -- có --> J1["Nhắc: Ctrl+C rồi chạy lại brain"] --> Z
@@ -72,6 +74,7 @@ flowchart TD
 | `--retention <days>` | Giá trị tối thiểu cho `cleanupPeriodDays` (mặc định 365; `0` = không sửa) |
 | `--no-hook` | Không đăng ký hook SessionEnd |
 | `--no-shim` | Không tạo lệnh `brain` |
+| `--no-mcp` | Không đăng ký MCP server `personal-brain` |
 | `--no-ingest` | Không đọc transcript sau khi cài |
 | `--dry-run` | Chỉ in ra những gì sẽ làm, không thay đổi gì |
 
@@ -85,7 +88,7 @@ install.cmd                  # macOS/Linux: node scripts/install.mjs
 Chỉ các file code bị thay; `config.json`, `secrets.json`, `brain.db` và log được giữ nguyên.
 Nếu dashboard đang chạy, tắt nó (Ctrl+C) rồi chạy lại `brain`. Xem phiên bản đang cài bằng `brain version`.
 
-**Gỡ cài đặt**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) gỡ hook và lệnh `brain`, xóa code nhưng giữ dữ liệu. Thêm `--purge` để xóa luôn dữ liệu.
+**Gỡ cài đặt**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) gỡ hook, MCP server `personal-brain` và lệnh `brain`, xóa code nhưng giữ dữ liệu. Thêm `--purge` để xóa luôn dữ liệu.
 Sau đó có thể xóa thư mục đã clone.
 
 ```mermaid
@@ -94,7 +97,7 @@ flowchart LR
     U1[git pull] --> U2[install.cmd] --> U3["Thay file code<br/>giữ config.json, secrets.json, brain.db, log"] --> U4["Ctrl+C server cũ → brain"]
   end
   subgraph rm["Gỡ cài đặt"]
-    R1[uninstall.cmd] --> R2["Gỡ hook SessionEnd<br/>+ lệnh brain"] --> R3{"--purge?"}
+    R1[uninstall.cmd] --> R2["Gỡ hook SessionEnd<br/>+ MCP server + lệnh brain"] --> R3{"--purge?"}
     R3 -- không --> R4["Xoá code, giữ dữ liệu"]
     R3 -- có --> R5["Xoá toàn bộ thư mục cài"]
   end
@@ -113,16 +116,39 @@ brain summarize "<proj>"   tóm tắt AI cho 1 project
 brain version              phiên bản đang cài
 ```
 
+**Tìm kiếm** (ô tìm trên dashboard): dùng SQLite FTS5 trên tiêu đề session, prompt, knowledge và tóm tắt AI. Không phân biệt dấu ("quyet dinh" khớp "quyết định"), khớp đầu từ, xếp theo độ liên quan.
+
+### Hỏi brain ngay trong Claude Code (MCP)
+
+Bộ cài đăng ký MCP server `personal-brain` (scope user, chỉ đọc) để Claude Code ở **bất kỳ project nào** tra được lịch sử làm việc của bạn:
+
+| Tool | Dùng khi hỏi kiểu | Trả về |
+| --- | --- | --- |
+| `brain_search(query, project?, kinds?, limit?)` | "lần trước tôi xử lý lỗi CSRF thế nào?" | prompt / session / knowledge / tóm tắt AI khớp nhất, kèm đoạn trích và ngày |
+| `brain_project(name?)` | "dự án X đang đến đâu, đã quyết định gì?" | tóm tắt AI, knowledge, session gần đây, file hay sửa, prompt gần nhất. Bỏ trống `name` = project hiện tại |
+| `brain_recent(days?, project?)` | "tuần này tôi làm gì?" | session theo ngày, kèm số prompt và chi phí |
+
+Chỉ cần hỏi bình thường trong Claude Code, Claude tự gọi tool khi cần. Kiểm tra bằng `claude mcp get personal-brain` hoặc `/mcp` trong Claude Code.
+Đăng ký tay (khi cài với `--no-mcp` hoặc máy không có lệnh `claude` lúc cài):
+
+```sh
+claude mcp add --scope user personal-brain -- node --no-warnings "<thư mục cài>/mcp.mjs"
+```
+
+`brain_project` trả kết quả đầy đủ nhất khi project đã có tóm tắt AI (`brain summarize "<project>"`).
+Lưu ý: kết quả tool được đưa vào ngữ cảnh của Claude, tức là đi qua Claude API như mọi nội dung khác trong session.
+
 Luồng dữ liệu:
 
 ```mermaid
 flowchart LR
   T["Transcript Claude Code<br/>~/.claude/projects"] --> I["ingest.mjs"]
   H["Hook SessionEnd"] --> I
-  I --> DB[("brain.db")]
+  I --> DB[("brain.db<br/>+ chỉ mục FTS5")]
   DB --> S["server.mjs<br/>127.0.0.1:4377"] --> UI["Dashboard"]
   S -->|"khi mở + định kỳ + nút ↻"| I
   S -->|"tuỳ chọn"| AI["Tóm tắt AI<br/>(provider đã chọn)"]
+  DB --> M["mcp.mjs (stdio, chỉ đọc)"] --> CC["Claude Code<br/>brain_search / brain_project / brain_recent"]
 ```
 
 Để dùng tóm tắt AI:

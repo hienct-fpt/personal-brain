@@ -43,7 +43,11 @@ flowchart LR
   S -->|"chỉ khi đã có API key"| SM["summarize.mjs"]
   SM --> P["providers.mjs<br/>Claude / OpenAI / Gemini / Azure / OpenAI-compatible"]
   SM -->|"lưu kết quả"| DB
+  DB -->|"chỉ đọc"| M["mcp.mjs (stdio)<br/>brain_search / brain_project / brain_recent"]
+  M --> CC["Claude Code (mọi project)"]
 ```
+
+Sau mỗi lần ingest hoặc tóm tắt, chỉ mục `search_fts` (FTS5) được dựng lại toàn bộ từ `sessions`, `prompts`, `knowledge` và `summaries`. Với khoảng 1.200 dòng, việc này mất khoảng 0,4 giây.
 
 ### 4.2 Ingest tăng dần
 
@@ -116,7 +120,9 @@ sequenceDiagram
 ├─ summarize.mjs        # tóm tắt 1 project bằng provider đang chọn
 ├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
 ├─ secrets.mjs          # lưu API key theo từng provider, mã hoá Windows DPAPI
+├─ query.mjs            # truy vấn dùng chung: chỉ mục + tìm kiếm FTS5, tổng hợp project, session gần đây
 ├─ server.mjs           # HTTP server + API JSON
+├─ mcp.mjs              # MCP server stdio chỉ đọc cho Claude Code (đăng ký bằng claude mcp add)
 ├─ service.mjs          # brain start|stop|restart|status|autostart (chạy nền, HKCU Run)
 ├─ hook-sessionend.mjs  # hook SessionEnd: chạy ingest nền rồi thoát ngay
 ├─ public/index.html    # dashboard (JS thuần + SVG)
@@ -138,6 +144,7 @@ sequenceDiagram
 | `knowledge` | các file memory Claude đã lưu theo project | `~/.claude/projects/*/memory/*.md` |
 | `summaries` | tóm tắt AI theo project (JSON) + token/chi phí của lần tóm tắt | Claude API |
 | `ingest_state` | chữ ký mtime/size từng session để ingest tăng dần | — |
+| `search_fts` | chỉ mục FTS5 (unicode61, bỏ dấu, tự đổi `đ`→`d`); dữ liệu suy ra, dựng lại được bất cứ lúc nào | các bảng trên |
 
 **Chi phí:**
 
@@ -183,7 +190,7 @@ Số gợi ý mức "Ưu tiên cao" hiện thành badge trên tab.
 
 **⚙ Cài đặt:** đăng ký/kiểm tra/xoá API key; chọn model, effort, ngôn ngữ tóm tắt.
 
-**Tìm kiếm:** trong tiêu đề session, prompt và knowledge.
+**Tìm kiếm:** dùng FTS5 trên tiêu đề session, prompt, knowledge và tóm tắt AI. Không phân biệt dấu, khớp đầu từ, xếp theo bm25. Nếu không có kết quả khớp mọi từ thì tìm kết quả khớp bất kỳ từ nào.
 
 ## 8. Tóm tắt AI
 
@@ -224,6 +231,7 @@ Số gợi ý mức "Ưu tiên cao" hiện thành badge trên tab.
 - `config.json → exclude`: project không ghi nhận.
 - Không lưu nội dung file hay output lệnh, chỉ lưu đường dẫn file.
 - Server chỉ nghe ở `127.0.0.1`. Request POST bắt buộc có header `x-brain: 1` và Origin là chính server (chặn CSRF từ trang web khác).
+- MCP server chỉ đọc và chỉ chạy qua stdio (không mở cổng). Kết quả tool đi vào ngữ cảnh của session Claude Code đang hỏi.
 - Tóm tắt AI gửi prompt/tiêu đề/memory của project lên Claude API. Với dự án khách hàng nhạy cảm, hãy thêm vào `exclude` hoặc không bấm tóm tắt.
 
 ## 11. Trạng thái & lộ trình
@@ -235,7 +243,8 @@ Số gợi ý mức "Ưu tiên cao" hiện thành badge trên tab.
 | 3. Dashboard | Dự án (portfolio + chi tiết), AI usage, 💡 Gợi ý tối ưu, tìm kiếm | ✅ |
 | 4. Tóm tắt AI | 5 provider (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), khoá bằng API key, ⚙ Cài đặt | ✅ code xong — **chưa chạy thử với key thật** |
 | 5. Hook & lưu giữ | SessionEnd + `cleanupPeriodDays` 365 | ✅ đã cài — xác nhận qua `ingest-hook.log` sau session kế tiếp |
-| 6. (Sau) | Nút "Tóm tắt tất cả project đang chạy"; Claude đọc brain qua MCP/skill; thêm nguồn GitHub Copilot, git commit; FTS5 cho tìm kiếm | — |
+| 6. Brain cho Claude | MCP server chỉ đọc (`brain_search`, `brain_project`, `brain_recent`) + tìm kiếm FTS5 | ✅ smoke test qua stdio — chưa thử trong session Claude Code thật |
+| 7. (Sau) | Nút "Tóm tắt tất cả project đang chạy"; hook SessionStart chèn tóm tắt project; thêm nguồn GitHub Copilot, git commit | — |
 
 ## 12. Cần chốt
 

@@ -568,8 +568,12 @@ async function renderProjectDetail(name) {
 // ---------- SEARCH ----------
 async function renderSearch(q) {
   const r = await api(`/api/search?q=${encodeURIComponent(q)}`);
-  const hl = (t) => esc(t).replace(new RegExp(esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (m) => `<mark>${m}</mark>`);
+  const words = (q.match(/[\p{L}\p{N}_]+/gu) ?? []).map((w) => esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = words.length ? new RegExp(words.join('|'), 'giu') : null;
+  const hl = (t) => (re ? esc(t).replace(re, (m) => `<mark>${m}</mark>`) : esc(t));
   $('#app').innerHTML = `<div class="card"><h2>Kết quả cho “${esc(q)}”</h2>
+    <div class="muted">Không phân biệt dấu, khớp đầu từ, xếp theo độ liên quan.</div>
+    ${r.summaries?.length ? `<h3>Tóm tắt AI (${r.summaries.length})</h3>${r.summaries.map((m) => `<div><a href="#/projects/${encodeURIComponent(m.project)}">${esc(m.project)}</a> · <span class="muted">${hl(m.snippet)}</span></div>`).join('')}` : ''}
     <h3>Session (${r.sessions.length})</h3>${r.sessions.map((s) => `<div><a href="#/projects/${encodeURIComponent(s.project)}">${esc(s.project)}</a> · ${day(s.started_at)} · ${hl(s.title ?? '')}</div>`).join('') || '<div class="muted">—</div>'}
     <h3>Knowledge (${r.knowledge.length})</h3>${r.knowledge.map((k) => `<div><a href="#/projects/${encodeURIComponent(k.project)}">${esc(k.project)}</a> · <b>${hl(k.name)}</b> <span class="muted">${hl(k.description)}</span></div>`).join('') || '<div class="muted">—</div>'}
     <h3>Prompt (${r.prompts.length})</h3>${r.prompts.map((p) => `<div class="prompt"><span class="muted">${dt(p.ts)} · <a href="#/projects/${encodeURIComponent(p.project)}">${esc(p.project)}</a></span>\n${hl(p.text)}</div>`).join('') || '<div class="muted">—</div>'}

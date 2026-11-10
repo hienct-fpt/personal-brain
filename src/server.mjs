@@ -7,10 +7,12 @@ import { openDb, loadConfig, saveConfig, localDay, HOME } from './lib.mjs';
 import { getApiKey, setApiKey, keyHint } from './secrets.mjs';
 import { PROVIDERS, ProviderError, listModels, providerReady } from './providers.mjs';
 import { ingest } from './ingest.mjs';
+import { search as ftsSearch, ensureSearchIndex } from './query.mjs';
 import { summarizeProject, NoApiKeyError, EFFORTS, aiConfig, activeProvider } from './summarize.mjs';
 
 const cfg = loadConfig();
 const db = openDb();
+db.exec('BEGIN'); ensureSearchIndex(db); db.exec('COMMIT');
 const port = Number(process.env.BRAIN_PORT ?? cfg.port);
 // Commit of the code this process loaded vs. what is installed now (differs after an upgrade until restart).
 const readCommit = () => { try { return JSON.parse(readFileSync(join(HOME, 'version.json'), 'utf8')).commit ?? null; } catch { return null; } };
@@ -140,12 +142,15 @@ function project(name) {
   };
 }
 
+// FTS5 ranked search (accent-insensitive, prefix match) grouped for the search view.
 function search(q) {
-  const like = `%${q}%`;
+  const hits = (kind, limit) => ftsSearch(db, q, { kinds: [kind], limit });
   return {
-    sessions: all('SELECT id, project, title, started_at FROM sessions WHERE title LIKE ? ORDER BY started_at DESC LIMIT 20', like),
-    prompts: all('SELECT project, ts, text FROM prompts WHERE text LIKE ? ORDER BY ts DESC LIMIT 40', like),
-    knowledge: all('SELECT project, name, description FROM knowledge WHERE name LIKE ? OR description LIKE ? OR content LIKE ? LIMIT 20', like, like, like),
+    sessions: hits('session', 20).map((h) => ({ id: h.ref, project: h.project, title: h.title, started_at: h.ts })),
+    knowledge: hits('knowledge', 20).map((h) => ({ project: h.project, name: h.title,
+      description: get('SELECT description FROM knowledge WHERE path = ?', h.ref)?.description ?? '' })),
+    summaries: hits('summary', 10).map((h) => ({ project: h.project, ts: h.ts, snippet: h.snippet })),
+    prompts: hits('prompt', 40).map((h) => ({ project: h.project, ts: h.ts, text: h.raw })),
   };
 }
 

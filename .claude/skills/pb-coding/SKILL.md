@@ -22,6 +22,8 @@ flowchart LR
 | `src/lib.mjs` | `DEFAULTS` config, `SCHEMA`, `openDb()` + migration, `redact()`, `projectOf()`, `isExcluded()`, `localDay()` | thêm config key, bảng/cột, quy tắc đặt tên project |
 | `src/ingest.mjs` | `listSessions` → `parseSession` (đọc JSONL) → `writeSession`; `estimateMissingCosts`; `ingestKnowledge`; `ingest()` | lấy thêm dữ liệu từ transcript |
 | `src/server.mjs` | hàm truy vấn `usage()`, `activity()`, `projects()`, `project()`, `search()`, `settings()`; router trong `createServer` | thêm/sửa API |
+| `src/query.mjs` | `rebuildSearchIndex()` (FTS5 `search_fts`), `search()`, `resolveProject()`, `projectBrief()`, `recent()` — dùng chung cho server + MCP | đổi tìm kiếm / nội dung trả cho agent |
+| `src/mcp.mjs` | MCP server stdio chỉ đọc: `TOOLS` + handler `brain_search/brain_project/brain_recent`; stdout chỉ dành cho JSON-RPC | thêm/sửa tool MCP (thêm kiểm tra trong `scripts/smoke.mjs`) |
 | `src/public/index.html` | CSS, helper chart (`stackedBars`, `hBars`, `heatmap`, `sparkline`), view `renderUsage/renderPortfolio/renderProjectDetail/renderSearch/renderSettings`, router hash `route()` | sửa giao diện |
 | `src/summarize.mjs` | `buildContext()` (prompt gửi AI), JSON schema kết quả, `normalize()`, `summarizeProject()` | đổi nội dung tóm tắt |
 | `src/providers.mjs` | `PROVIDERS` (metadata UI) + `impl` (`listModels`, `generate`) mỗi provider | thêm provider |

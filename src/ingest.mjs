@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { join, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { openDb, loadConfig, projectOf, isExcluded, redact, localDay } from './lib.mjs';
+import { rebuildSearchIndex } from './query.mjs';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const SKIP_PROMPT = /^(<local-command|<system-reminder|<task-notification|Caveat:|\[Request interrupted|<bash-|<user-memory)/;
@@ -219,6 +220,7 @@ export async function ingest({ full = false, log = console.log } = {}) {
   db.exec('BEGIN');
   estimateMissingCosts(db);
   ingestKnowledge(db, cfg, dirCwd);
+  rebuildSearchIndex(db);
   db.exec('COMMIT');
   const n = db.prepare('SELECT COUNT(*) n FROM sessions').get().n;
   db.close();

@@ -7,6 +7,7 @@
 //   --retention <days>  set Claude Code "cleanupPeriodDays" to at least this value (default 365, 0 = don't touch)
 //   --no-hook           don't register the SessionEnd hook in ~/.claude/settings.json
 //   --no-shim           don't put a `brain` command on PATH
+//   --no-mcp            don't register the read-only MCP server "personal-brain" (needs the `claude` CLI)
 //   --no-ingest         don't run the first ingest after installing
 //   --dry-run           print what would happen, change nothing
 //
@@ -26,7 +27,7 @@ const RUNTIME_FILES = new Set(['config.json', 'secrets.json', 'brain.db', 'brain
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
-if (flag('--help') || flag('-h')) { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 14).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 15).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const DIR = resolve(opt('--dir', join(homedir(), '.personal-brain')).replace(/^~(?=$|[\\/])/, homedir()));
 const RETENTION = Number(opt('--retention', '365'));
 const DRY = flag('--dry-run');
@@ -118,6 +119,20 @@ if (!flag('--no-hook') || RETENTION > 0) {
     mkdirSync(dirname(settingsPath), { recursive: true });
     if (existsSync(settingsPath)) { const bak = `${settingsPath}.${Date.now()}.bak`; cpSync(settingsPath, bak); info(`backup: ${bak}`); }
     writeFileSync(settingsPath, JSON.stringify(s, null, 2) + '\n');
+  }
+}
+
+// ---------- 5b. MCP server (user scope): Claude Code can query brain.db from any project ----------
+if (!flag('--no-mcp')) {
+  step('MCP server personal-brain (claude mcp, scope user)');
+  const mcpPath = fwd(join(DIR, 'mcp.mjs'));
+  const claude = (...a) => spawnSync('claude', a, { encoding: 'utf8', shell: WIN, timeout: 60000 });
+  if (claude('--version').status !== 0) info(`Không tìm thấy lệnh \`claude\` — bỏ qua. Đăng ký tay: claude mcp add --scope user personal-brain -- node --no-warnings "${mcpPath}"`);
+  else if (DRY) info(`sẽ đăng ký → node ${mcpPath}`);
+  else {
+    claude('mcp', 'remove', 'personal-brain', '--scope', 'user'); // re-register: the install dir may have changed
+    const r = claude('mcp', 'add', '--scope', 'user', 'personal-brain', '--', 'node', '--no-warnings', WIN ? `"${mcpPath}"` : mcpPath);
+    info(r.status === 0 ? `đã đăng ký → node ${mcpPath} (tool: brain_search, brain_project, brain_recent)` : `⚠ đăng ký lỗi: ${(r.stderr || r.stdout).trim()}`);
   }
 }
 

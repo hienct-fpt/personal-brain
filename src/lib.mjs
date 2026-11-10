@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS knowledge (
 
 CREATE TABLE IF NOT EXISTS summaries (
   project TEXT PRIMARY KEY, generated_at INTEGER, model TEXT, content TEXT);
+
+-- derived full-text index over sessions/prompts/knowledge/summaries (rebuilt by query.mjs rebuildSearchIndex)
+CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+  kind UNINDEXED, ref UNINDEXED, project UNINDEXED, ts UNINDEXED, title UNINDEXED, raw UNINDEXED, text,
+  tokenize = 'unicode61 remove_diacritics 2');
 `;
 
 export function openDb() {

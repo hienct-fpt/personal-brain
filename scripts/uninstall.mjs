@@ -3,7 +3,7 @@
 //
 //   node scripts/uninstall.mjs [--dir <path>] [--purge] [--dry-run]
 //
-//   Removes the SessionEnd hook from ~/.claude/settings.json and the `brain` command.
+//   Removes the SessionEnd hook from ~/.claude/settings.json, the MCP server "personal-brain" and the `brain` command.
 //   Code files are removed; data (brain.db, config.json, secrets.json) is KEPT unless --purge.
 //   cleanupPeriodDays is left unchanged.
 import { existsSync, readFileSync, rmSync, writeFileSync, cpSync, readdirSync } from 'node:fs';
@@ -39,6 +39,16 @@ if (existsSync(settingsPath)) {
       if (!DRY) { cpSync(settingsPath, `${settingsPath}.${Date.now()}.bak`); writeFileSync(settingsPath, JSON.stringify(s, null, 2) + '\n'); }
       info('đã gỡ hook SessionEnd khỏi ~/.claude/settings.json');
     }
+  }
+}
+
+// MCP server — only if it points at this install dir
+{
+  const claude = (...a) => spawnSync('claude', a, { encoding: 'utf8', shell: process.platform === 'win32', timeout: 60000 });
+  const cur = claude('mcp', 'get', 'personal-brain');
+  if (cur.status === 0 && norm(cur.stdout).includes(`${norm(DIR)}/mcp.mjs`)) {
+    if (!DRY) claude('mcp', 'remove', 'personal-brain', '--scope', 'user');
+    info('đã gỡ MCP server personal-brain (claude mcp remove)');
   }
 }
 

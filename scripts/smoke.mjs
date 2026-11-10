@@ -66,7 +66,30 @@ if (name) {
 } else console.log('- bỏ qua /api/project, /api/activity (DB chưa có project — chạy `npm run ingest`)');
 
 const search = await getJson('/api/search?q=a');
-ok('GET /api/search', search.status === 200 && Array.isArray(search.body?.sessions));
+ok('GET /api/search', search.status === 200 && Array.isArray(search.body?.sessions) && Array.isArray(search.body?.summaries));
+const plain = await getJson('/api/search?q=dinh'), accented = await getJson('/api/search?q=%C4%91%E1%BB%8Bnh');
+const sig = (b) => JSON.stringify(['sessions', 'prompts', 'knowledge', 'summaries'].map((k) => b?.[k]?.length));
+ok('search không phân biệt dấu (dinh = định)', plain.status === 200 && sig(plain.body) === sig(accented.body), sig(plain.body));
+ok('search ký tự đặc biệt không lỗi', (await getJson('/api/search?q=%22%20OR%20*%20(')).status === 200);
+
+// MCP server over stdio: handshake, tool list, one call per tool, unknown method.
+{
+  const reqs = [
+    { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }, { method: 'notifications/initialized' },
+    { id: 2, method: 'tools/list' },
+    { id: 3, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'test', limit: 3 } } },
+    { id: 4, method: 'tools/call', params: { name: 'brain_project', arguments: { name: name ?? 'x' } } },
+    { id: 5, method: 'tools/call', params: { name: 'brain_recent', arguments: { days: 30 } } },
+    { id: 6, method: 'nope' },
+  ].map((m) => JSON.stringify({ jsonrpc: '2.0', ...m })).join('\n') + '\n';
+  const r = spawnSync(process.execPath, ['--no-warnings', join(root, 'src', 'mcp.mjs')], { input: reqs, encoding: 'utf8', timeout: 20000 });
+  const res = new Map(r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).map((o) => [o.id, o]));
+  ok('MCP initialize', res.get(1)?.result?.serverInfo?.name === 'personal-brain', r.stderr.trim().slice(0, 200));
+  ok('MCP tools/list = 3 tool chỉ đọc', res.get(2)?.result?.tools?.length === 3 && res.get(2).result.tools.every((t) => t.annotations?.readOnlyHint));
+  ok('MCP gọi đủ 3 tool', [3, 4, 5].every((i) => typeof res.get(i)?.result?.content?.[0]?.text === 'string' && !res.get(i).result.isError));
+  ok('MCP method lạ → -32601', res.get(6)?.error?.code === -32601);
+  ok('MCP stdout chỉ có JSON-RPC', res.size === 6);
+}
 
 const settings = await getJson('/api/settings');
 ok('GET /api/settings', settings.status === 200 && settings.body?.providers);

@@ -3,6 +3,7 @@
 // Usage: node --no-warnings summarize.mjs "<project>"
 import { pathToFileURL } from 'node:url';
 import { openDb, loadConfig, localDay } from './lib.mjs';
+import { rebuildSearchIndex } from './query.mjs';
 import { getApiKey } from './secrets.mjs';
 import { PROVIDERS, generateJson, providerReady } from './providers.mjs';
 
@@ -98,6 +99,8 @@ export async function summarizeProject(project) {
     const content = normalize(r.data);
     content._usage = { ...r.usage, provider: r.provider };
     db.prepare('INSERT OR REPLACE INTO summaries VALUES (?,?,?,?)').run(project, Date.now(), r.model, JSON.stringify(content));
+    db.exec('BEGIN');
+    try { rebuildSearchIndex(db); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
     return content;
   } finally { db.close(); }
 }
