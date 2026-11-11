@@ -71,7 +71,8 @@ async function start({ wait = true } = {}) {
   const up = await waitFor(async () => exited || !!(await probe()));
   const s2 = await probe();
   if (!up || !s2) fail(`Server không lên — xem log: ${LOG}`);
-  log(`✓ Đang chạy nền (pid ${s2.pid}) — ${appUrl}\n  log: ${LOG}`);
+  // busy = listening but blocked (startup ingest) → no /api/status answer yet; the child we spawned is the server.
+  log(`✓ Đang chạy nền (pid ${s2.pid ?? child.pid}${s2.busy ? ', đang đọc dữ liệu' : ''}) — ${appUrl}\n  log: ${LOG}`);
 }
 
 async function stop() {

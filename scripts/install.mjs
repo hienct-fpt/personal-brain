@@ -150,7 +150,7 @@ if (!flag('--no-shim')) {
     const bin = join(homedir(), '.local', 'bin');
     if (!DRY) {
       mkdirSync(bin, { recursive: true });
-      writeFileSync(join(bin, 'brain'), `#!/bin/sh\nD="${DIR}"\ncase "$1" in\n  ingest) exec node --no-warnings "$D/ingest.mjs" "$2";;\n  summarize) exec node --no-warnings "$D/summarize.mjs" "$2";;\n  version) exec cat "$D/version.json";;\n  start|stop|restart|status|autostart) exec node --no-warnings "$D/service.mjs" "$@";;\n  *) exec node --no-warnings "$D/server.mjs" --open;;\nesac\n`, { mode: 0o755 });
+      writeFileSync(join(bin, 'brain'), `#!/bin/sh\nD="${DIR}"\ncase "$1" in\n  ingest) exec node --no-warnings "$D/ingest.mjs" "$2";;\n  summarize) exec node --no-warnings "$D/summarize.mjs" "$2";;\n  version) exec cat "$D/version.json";;\n  kit) exec node --no-warnings "$D/kit.mjs" "$@";;\n  start|stop|restart|status|autostart) exec node --no-warnings "$D/service.mjs" "$@";;\n  *) exec node --no-warnings "$D/server.mjs" --open;;\nesac\n`, { mode: 0o755 });
     }
     info(`${join(bin, 'brain')} (cần ~/.local/bin trên PATH)`);
   }

@@ -68,6 +68,17 @@ CREATE TABLE IF NOT EXISTS model_cost (
 CREATE TABLE IF NOT EXISTS knowledge (
   path TEXT PRIMARY KEY, project TEXT, name TEXT, description TEXT, content TEXT, mtime INTEGER);
 
+-- skills / agents / slash commands found on disk (user, synced, plugin, per-project .claude/); rebuilt every ingest
+CREATE TABLE IF NOT EXISTS extensions (
+  path TEXT PRIMARY KEY, kind TEXT, name TEXT, scope TEXT, project TEXT,
+  description TEXT, outline TEXT, meta TEXT, content TEXT, size INTEGER, mtime INTEGER);
+
+-- 1 row per skill call / subagent launch / slash command found in transcripts
+CREATE TABLE IF NOT EXISTS ext_usage (
+  session_id TEXT, project TEXT, ts INTEGER, kind TEXT, name TEXT);
+CREATE INDEX IF NOT EXISTS ix_ext_usage_session ON ext_usage(session_id);
+CREATE INDEX IF NOT EXISTS ix_ext_usage_name ON ext_usage(kind, name);
+
 CREATE TABLE IF NOT EXISTS summaries (
   project TEXT PRIMARY KEY, generated_at INTEGER, model TEXT, content TEXT);
 

@@ -49,7 +49,7 @@ flowchart LR
   M --> CC["Claude Code (any project)"]
 ```
 
-After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt from `sessions`, `prompts`, `knowledge` and `summaries`. At ~1,200 rows this takes about 0.4 s.
+After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt from `sessions`, `prompts`, `knowledge`, `summaries` and `extensions` (name + description + outline only). At ~1,200 rows this takes about 0.4 s.
 
 ### 4.2 Incremental ingest
 
@@ -67,7 +67,8 @@ flowchart TD
   C -- done --> G["Map transcript dir → cwd"]
   G --> H["estimateMissingCosts<br/>(sessions without cost-state)"]
   H --> K["ingestKnowledge (memory/*.md)"]
-  K --> R["rebuildSearchIndex (FTS5)"]
+  K --> X["ingestExtensions<br/>(skills / agents / commands on disk)"]
+  X --> R["rebuildSearchIndex (FTS5)"]
   R --> Z([done])
 ```
 
@@ -136,11 +137,14 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 ├─ config.json          # project grouping, aliases, exclude, summary model/effort/language
 ├─ lib.mjs              # paths, config, DB schema + migrations, secret redaction, project names
 ├─ ingest.mjs           # transcripts + memory files → brain.db
+├─ extensions.mjs       # skills / agents / slash commands on disk + frontmatter/outline summary
 ├─ summarize.mjs        # summarize one project with the selected provider
 ├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
 ├─ secrets.mjs          # per-provider API key storage, encrypted with Windows DPAPI
 ├─ query.mjs            # shared queries: FTS5 index + search, project brief, recent sessions
 ├─ server.mjs           # HTTP server + JSON API
+├─ kit.mjs              # brain kit list|add|remove: copy the starter kit into <project>/.claude or ~/.claude
+├─ kit/                 # starter kit: skills/ (brain-recall, bugfix-flow, verify-before-done), agents/ (code-reviewer, test-runner, brain-researcher), commands/ (brain, recap, check, commit-msg)
 ├─ mcp.mjs              # read-only stdio MCP server for Claude Code (registered with claude mcp add)
 ├─ service.mjs          # brain start|stop|restart|status|autostart (background, HKCU Run)
 ├─ hook-sessionend.mjs  # SessionEnd hook: start ingest in the background and exit immediately
@@ -162,7 +166,9 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 | `model_cost` | USD cost per model per session | `cost-state` |
 | `knowledge` | memory files Claude saved per project | `~/.claude/projects/*/memory/*.md` |
 | `summaries` | AI summary per project (JSON) + tokens/cost of that run | provider API |
-| `ingest_state` | mtime/size signature per session for incremental ingest | — |
+| `extensions` | skills (`skills/<n>/SKILL.md`), subagents (`agents/**/*.md`), slash commands (`commands/**/*.md`): scope (`user`/`synced`/`plugin`/`project`), description, heading outline, model/tools, body (redacted, ≤ 6,000 chars); rebuilt every ingest | `~/.claude/`, `~/.claude/skills/synced/*/`, installed plugins, `<project>/.claude/` (workspace tree, depth 4) |
+| `ext_usage` | one row per `Skill` call, `Agent`/`Task` launch (by `subagent_type`) and `/command` typed | transcript |
+| `ingest_state` | mtime/size signature per session for incremental ingest; `PRAGMA user_version` < `INGEST_VERSION` forces one full re-ingest when new fields are extracted | — |
 | `search_fts` | FTS5 index (unicode61, diacritics removed, `đ`→`d` folded by us); derived data, can be rebuilt any time | the tables above |
 
 **Cost:**
@@ -209,9 +215,15 @@ UI labels are in Vietnamese; English meanings are given in parentheses.
 
 The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the tab.
 
+**"🧩 Skills" tab** (`GET /api/extensions?days=`, `GET /api/extension?path=`): skills, subagents and slash commands, merged by name (copies in nested repos, user + synced; a skill and a command with the same name are one item, since a skill is invoked as `/name`; `plugin:name` usage matches `name`).
+- Tiles: used / on disk per kind, plus built-ins (usage with no file: `/clear`, `general-purpose`, `Explore`…).
+- Table: content summary (description + outline + model/tools), where copies live, calls, sessions, last use, top projects. Filters: kind, "used only", text. Clicking a name shows the full file.
+- The project detail page lists the skills/agents/commands used in that project and those in its `.claude/`.
+- "📦 Bộ mẫu" (starter kit) card (`GET /api/kit`): every kit item, where it is already installed, and the `brain kit add <name>` command to copy. Installing is CLI-only (the browser never writes into project folders).
+
 **"⚙ Cài đặt" (Settings):** register/verify/delete API keys; choose model, effort, summary language.
 
-**Search:** FTS5 over session titles, prompts, knowledge and AI summaries. Accent-insensitive, prefix matching, ranked by bm25. If no result matches every word, falls back to matching any word.
+**Search:** FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive, prefix matching, ranked by bm25. If no result matches every word, falls back to matching any word.
 
 ## 8. AI summaries
 

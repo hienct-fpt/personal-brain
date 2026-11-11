@@ -13,6 +13,7 @@
     "check": "node scripts/check.mjs",
     "smoke": "node --no-warnings scripts/smoke.mjs",
     "db": "node --no-warnings scripts/db.mjs",
+    "kit": "node --no-warnings src/kit.mjs",
     "test": "node scripts/check.mjs && node --no-warnings scripts/smoke.mjs",
     "setup": "node scripts/install.mjs",
     "uninstall-app": "node scripts/uninstall.mjs"

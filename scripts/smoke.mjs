@@ -65,6 +65,38 @@ if (name) {
   ok('GET /api/activity', a.status === 200 && Array.isArray(a.body));
 } else console.log('- bỏ qua /api/project, /api/activity (DB chưa có project — chạy `npm run ingest`)');
 
+const ext = await getJson('/api/extensions?days=0');
+ok('GET /api/extensions', ext.status === 200 && Array.isArray(ext.body?.items) && ext.body.items.every((x) => x.name && Array.isArray(x.kinds) && Array.isArray(x.copies)),
+  `${ext.body?.items?.filter((x) => !x.builtin).length ?? 0} mục trên máy, ${ext.body?.events ?? 0} lượt dùng`);
+const firstExt = ext.body?.items?.find((x) => x.path);
+if (firstExt) {
+  const one = await getJson(`/api/extension?path=${encodeURIComponent(firstExt.path)}`);
+  ok('GET /api/extension', one.status === 200 && typeof one.body?.content === 'string', firstExt.name);
+}
+ok('GET /api/extension path lạ → 404', (await getJson('/api/extension?path=C%3A%2Fwindows%2Fwin.ini')).status === 404);
+
+const kitApi = await getJson('/api/kit');
+ok('GET /api/kit', kitApi.status === 200 && kitApi.body?.length >= 9 && kitApi.body.every((x) => x.name && x.kind && x.description && !('src' in x)), `${kitApi.body?.length ?? 0} mẫu`);
+
+// brain kit CLI against a throwaway project dir: add all → files exist; re-add → same; modified copy survives remove.
+{
+  const { mkdtempSync, existsSync, appendFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const tmp = mkdtempSync(join(tmpdir(), 'pb-kit-'));
+  const kit = (...a) => spawnSync(process.execPath, ['--no-warnings', join(root, 'src', 'kit.mjs'), ...a, '--dir', tmp], { encoding: 'utf8' });
+  const dry = kit('add', 'all', '--dry-run');
+  ok('brain kit --dry-run không ghi gì', dry.status === 0 && dry.stdout.includes('sẽ thêm') && !dry.stdout.includes('đã thêm') && !existsSync(join(tmp, '.claude')));
+  const add = kit('add', 'all');
+  const dot = join(tmp, '.claude');
+  ok('brain kit add all', add.status === 0 && existsSync(join(dot, 'skills', 'brain-recall', 'SKILL.md')) && existsSync(join(dot, 'agents', 'code-reviewer.md')) && existsSync(join(dot, 'commands', 'recap.md')), add.stderr.trim());
+  ok('brain kit add lần 2 → giống hệt', !kit('add', 'all').stdout.includes('đã thêm'));
+  appendFileSync(join(dot, 'commands', 'recap.md'), '\nmine\n');
+  const rm = kit('remove', 'all');
+  ok('brain kit remove giữ file đã sửa', rm.status === 0 && existsSync(join(dot, 'commands', 'recap.md')) && !existsSync(join(dot, 'agents', 'code-reviewer.md')));
+  ok('brain kit tên lạ → exit 1', kit('add', 'khong-co').status === 1);
+  rmSync(tmp, { recursive: true, force: true });
+}
+
 const search = await getJson('/api/search?q=a');
 ok('GET /api/search', search.status === 200 && Array.isArray(search.body?.sessions) && Array.isArray(search.body?.summaries));
 const plain = await getJson('/api/search?q=dinh'), accented = await getJson('/api/search?q=%C4%91%E1%BB%8Bnh');

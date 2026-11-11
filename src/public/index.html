@@ -165,7 +165,7 @@ dialog pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; }
 <body>
 <header>
   <h1>🧠 Personal <span>Brain</span></h1>
-  <nav><a href="#/projects" id="nav-projects">Dự án</a><a href="#/usage" id="nav-usage">AI usage</a><a href="#/tips" id="nav-tips">💡 Gợi ý <span id="tipbadge" class="badge" style="display:none;background:var(--accent);color:#fff"></span></a><a href="#/settings" id="nav-settings">⚙ Cài đặt <span id="keybadge" class="badge" style="display:none;background:var(--warn);color:#fff">chưa cấu hình AI</span></a></nav>
+  <nav><a href="#/projects" id="nav-projects">Dự án</a><a href="#/usage" id="nav-usage">AI usage</a><a href="#/extensions" id="nav-ext">🧩 Skills</a><a href="#/tips" id="nav-tips">💡 Gợi ý <span id="tipbadge" class="badge" style="display:none;background:var(--accent);color:#fff"></span></a><a href="#/settings" id="nav-settings">⚙ Cài đặt <span id="keybadge" class="badge" style="display:none;background:var(--warn);color:#fff">chưa cấu hình AI</span></a></nav>
   <div class="grow"></div>
   <input type="search" id="q" placeholder="Tìm prompt / session / knowledge…">
   <span class="status" id="status"></span>
@@ -543,6 +543,10 @@ async function renderProjectDetail(name) {
         ${d.knowledge.length ? `<div class="section-h" style="margin-top:10px">Memory Claude đã lưu · ${d.knowledge.length}</div><div class="kgrid">${d.knowledge.map((k, i) => `<div class="kcard" data-k="${i}"><b>${esc(k.name)}</b><span>${esc(k.description)}</span></div>`).join('')}</div>` : ''}
         ${!S.knowledge?.length && !d.knowledge.length ? '<div class="muted">Chưa có</div>' : ''}
       </div>
+      <div class="card"><h2>🧩 Skill · agent · command <small><a href="#/extensions">tất cả →</a></small></h2>
+        ${d.extensions.length ? `<table>${d.extensions.slice(0, 12).map((x) => `<tr><td><b>${esc(x.name)}</b> <span class="muted">${x.kinds.map((k) => EXT_KIND[k] ?? esc(k)).join(', ')}${x.builtin ? ' · built-in' : ''}</span>${x.description ? `<br><span class="muted" style="font-size:12px">${esc(x.description.slice(0, 140))}${x.description.length > 140 ? '…' : ''}</span>` : ''}</td><td class="n">${x.uses} lượt</td><td class="n">${ago(x.last)}</td></tr>`).join('')}</table>` : '<div class="muted">Chưa dùng skill / agent / command nào</div>'}
+        ${d.localExtensions.length ? `<div class="note">Có trong <code>.claude/</code> của project: ${['skill', 'agent', 'command'].map((k) => [k, d.localExtensions.filter((x) => x.kind === k)]).filter(([, xs]) => xs.length).map(([k, xs]) => `<span title="${esc(xs.map((x) => x.name).join(', '))}">${xs.length} ${k}</span>`).join(' · ')}</div>` : ''}
+      </div>
       <div class="card"><h2>File sửa nhiều nhất <small>theo thư mục</small></h2>
         ${d.files.length ? `<div class="ftree">${[...dirs].slice(0, 8).map(([dir, fs]) => `<div class="dir">📁 ${esc(dir)}</div>${fs.map((f) => `<div class="f" title="${esc(f.path)}"><span>${esc(f.name)}</span><span>${f.sessions} session</span></div>`).join('')}`).join('')}</div>` : '<div class="muted">Chưa có</div>'}
         ${d.tools.length ? `<div class="note">Tool hay dùng: ${d.tools.map(([t, n]) => `${esc(t)} ${n}`).join(' · ')}</div>` : ''}
@@ -565,6 +569,77 @@ async function renderProjectDetail(name) {
   };
 }
 
+// ---------- SKILLS / AGENTS / COMMANDS ----------
+const EXT_KIND = { skill: '🧩 skill', agent: '🤖 agent', command: '⌘ command' };
+const SCOPE = { user: 'user (~/.claude)', synced: 'synced (claude.ai)', plugin: 'plugin', project: 'project' };
+const extState = { days: 0, kind: '', used: true, q: '' };
+function whereOf(x) {
+  const g = new Map();
+  for (const c of x.copies) { const k = c.scope === 'project' ? c.project : SCOPE[c.scope] + (c.scope === 'plugin' && x.meta?.plugin ? ` ${x.meta.plugin}` : ''); g.set(k, (g.get(k) ?? 0) + 1); }
+  return [...g].map(([k, n]) => `<span class="badge" title="${n} bản">${esc(k)}${n > 1 ? ` ×${n}` : ''}</span>`).join(' ');
+}
+async function showExtension(path) {
+  const e = await api(`/api/extension?path=${encodeURIComponent(path)}`);
+  const meta = Object.entries(e.meta).map(([k, v]) => `${k}: ${v}`).join(' · ');
+  $('#xdlg-t').textContent = `${EXT_KIND[e.kind] ?? e.kind} · ${e.name}`;
+  $('#xdlg-c').textContent = [e.path, meta, e.description && `\n${e.description}`, e.outline && `\nMục lục: ${e.outline}`, `\n${'─'.repeat(40)}\n${e.content}`].filter(Boolean).join('\n');
+  $('#xdlg').showModal();
+}
+const bindExtLinks = (root) => root.querySelectorAll('[data-path]').forEach((a) => a.onclick = (e) => { e.preventDefault(); showExtension(a.dataset.path).catch((err) => alert(err.message)); });
+async function renderExtensions() {
+  const [r, kitItems] = await Promise.all([api(`/api/extensions?days=${extState.days}`), api('/api/kit')]);
+  const stat = (k) => { const xs = r.items.filter((x) => x.kinds.includes(k)); return { have: xs.filter((x) => !x.builtin).length, used: xs.filter((x) => x.uses).length, uses: xs.reduce((a, x) => a + (x.byKind[k] ?? 0), 0) }; };
+  const builtin = r.items.filter((x) => x.builtin);
+  const tile = (k, label) => { const s = stat(k); return `<div class="tile"><div class="k">${label}</div><div class="v">${s.used}<span class="muted" style="font-size:14px"> / ${s.have}</span></div><div class="s">đã dùng / có trên máy · ${s.uses} lượt</div></div>`; };
+  $('#app').innerHTML = `
+  <div class="filters">Khoảng thời gian:
+    ${[[7, '7 ngày'], [30, '30 ngày'], [90, '90 ngày'], [0, 'Tất cả']].map(([d, l]) => `<button data-days="${d}" class="${d === extState.days ? 'on' : ''}">${l}</button>`).join('')}
+  </div>
+  <div class="tiles">
+    ${tile('skill', '🧩 Skill')}${tile('agent', '🤖 Subagent')}${tile('command', '⌘ Slash command')}
+    <div class="tile"><div class="k">Built-in / không có file</div><div class="v">${builtin.length}</div><div class="s">${builtin.reduce((a, x) => a + x.uses, 0)} lượt (/clear, general-purpose…)</div></div>
+  </div>
+  <div class="card">
+    <h2>Skill · agent · command <small>gộp các bản trùng tên; tóm tắt = description + mục lục của file</small></h2>
+    <div class="chips">
+      ${[['', 'Tất cả'], ['skill', EXT_KIND.skill], ['agent', EXT_KIND.agent], ['command', EXT_KIND.command]].map(([k, l]) => `<button data-kind="${k}" class="${k === extState.kind ? 'on' : ''}">${l}</button>`).join('')}
+      <span class="sep"></span>
+      <button id="xused" class="${extState.used ? 'on' : ''}">Chỉ cái đã dùng</button>
+      <input type="search" id="xq" placeholder="Lọc theo tên / mô tả…" value="${esc(extState.q)}" style="${inputCss};margin-left:auto">
+    </div>
+    <div id="xtable"></div>
+  </div>
+  <div class="card"><h2>📦 Bộ mẫu Personal Brain <small>skill · agent · command dựng sẵn — cài vào project bằng lệnh <code>brain kit</code></small></h2>
+    <div class="note" style="margin:0 0 8px">Mở terminal trong thư mục project rồi chạy lệnh bên phải (hoặc thêm <code>--dir &lt;đường dẫn&gt;</code>; <code>--user</code> = cài cho mọi project; <code>brain kit add all</code> = cài cả bộ). File đã có / đã sửa sẽ không bị ghi đè.</div>
+    <table>${kitItems.map((x) => `<tr><td style="min-width:150px"><b>${x.kind === 'command' ? '/' : ''}${esc(x.name)}</b><br><span class="muted">${EXT_KIND[x.kind]}${x.model ? ` · ${esc(x.model)}` : ''}</span></td>
+      <td>${esc(x.description)}</td>
+      <td>${x.installed.length ? x.installed.map((p) => `<span class="badge">${esc(p)}</span>`).join(' ') : '<span class="muted">chưa cài</span>'}</td>
+      <td><code style="white-space:nowrap">brain kit add ${esc(x.name)}</code></td></tr>`).join('')}</table>
+  </div>
+  <dialog id="xdlg"><h3 id="xdlg-t"></h3><pre id="xdlg-c"></pre><form method="dialog" style="text-align:right"><button>Đóng</button></form></dialog>`;
+  const draw = () => {
+    const q = extState.q.toLowerCase();
+    const rows = r.items.filter((x) => (!extState.kind || x.kinds.includes(extState.kind)) && (!extState.used || x.uses)
+      && (!q || `${x.name} ${x.description} ${x.outline}`.toLowerCase().includes(q)));
+    $('#xtable').innerHTML = rows.length ? `<table><tr><th>Tên</th><th>Tóm tắt nội dung</th><th>Có ở đâu</th><th class="n">Lượt</th><th class="n">Session</th><th>Gần nhất</th><th>Dùng trong project</th></tr>
+      ${rows.slice(0, 300).map((x) => `<tr>
+        <td style="min-width:150px">${x.path ? `<a href="#" data-path="${esc(x.path)}"><b>${esc(x.name)}</b></a>` : `<b>${esc(x.name)}</b>`}<br><span class="muted">${x.kinds.map((k) => EXT_KIND[k] ?? esc(k)).join(', ')}</span></td>
+        <td>${x.builtin ? '<span class="muted">Built-in của Claude Code hoặc file không còn trên máy</span>' : `${esc(x.description.slice(0, 260))}${x.description.length > 260 ? '…' : ''}${x.outline ? `<div class="muted" style="font-size:12px;margin-top:3px">📑 ${esc(x.outline.slice(0, 200))}${x.outline.length > 200 ? '…' : ''}</div>` : ''}${x.meta?.model || x.meta?.tools ? `<div class="muted" style="font-size:12px">${[x.meta.model && `model: ${x.meta.model}`, x.meta.tools && `tools: ${x.meta.tools}`].filter(Boolean).map(esc).join(' · ')}</div>` : ''}`}</td>
+        <td>${x.builtin ? '<span class="badge">built-in</span>' : whereOf(x)}</td>
+        <td class="n">${x.uses || '—'}</td><td class="n">${x.sessions || '—'}</td><td>${x.last ? ago(x.last) : '<span class="muted">chưa dùng</span>'}</td>
+        <td>${x.projects.slice(0, 3).map(([p, n]) => `<a href="#/projects/${encodeURIComponent(p)}">${esc(leaf(p))}</a> <span class="muted">${n}</span>`).join('<br>')}${x.projects.length > 3 ? `<br><span class="muted">+${x.projects.length - 3} project</span>` : ''}</td>
+      </tr>`).join('')}</table>${rows.length > 300 ? `<div class="note">Hiện 300 / ${rows.length} — lọc thêm để thu hẹp.</div>` : ''}`
+      : `<div class="muted">Không có mục nào${extState.used ? ' đã dùng trong kỳ này — bỏ “Chỉ cái đã dùng” để xem tất cả' : ''}.</div>`;
+    bindExtLinks($('#xtable'));
+  };
+  draw();
+  const app = $('#app');
+  app.querySelectorAll('[data-days]').forEach((b) => b.onclick = () => { extState.days = Number(b.dataset.days); renderExtensions(); });
+  app.querySelectorAll('[data-kind]').forEach((b) => b.onclick = () => { extState.kind = b.dataset.kind; app.querySelectorAll('[data-kind]').forEach((x) => x.classList.toggle('on', x === b)); draw(); });
+  $('#xused').onclick = () => { extState.used = !extState.used; $('#xused').classList.toggle('on', extState.used); draw(); };
+  $('#xq').oninput = (e) => { extState.q = e.target.value; draw(); };
+}
+
 // ---------- SEARCH ----------
 async function renderSearch(q) {
   const r = await api(`/api/search?q=${encodeURIComponent(q)}`);
@@ -574,10 +649,13 @@ async function renderSearch(q) {
   $('#app').innerHTML = `<div class="card"><h2>Kết quả cho “${esc(q)}”</h2>
     <div class="muted">Không phân biệt dấu, khớp đầu từ, xếp theo độ liên quan.</div>
     ${r.summaries?.length ? `<h3>Tóm tắt AI (${r.summaries.length})</h3>${r.summaries.map((m) => `<div><a href="#/projects/${encodeURIComponent(m.project)}">${esc(m.project)}</a> · <span class="muted">${hl(m.snippet)}</span></div>`).join('')}` : ''}
+    ${r.extensions?.length ? `<h3>Skill · agent · command (${r.extensions.length})</h3>${r.extensions.map((x) => `<div><a href="#" data-path="${esc(x.path)}"><b>${hl(x.title)}</b></a> · <span class="muted">${esc(x.project)} · ${hl(x.snippet)}</span></div>`).join('')}` : ''}
     <h3>Session (${r.sessions.length})</h3>${r.sessions.map((s) => `<div><a href="#/projects/${encodeURIComponent(s.project)}">${esc(s.project)}</a> · ${day(s.started_at)} · ${hl(s.title ?? '')}</div>`).join('') || '<div class="muted">—</div>'}
     <h3>Knowledge (${r.knowledge.length})</h3>${r.knowledge.map((k) => `<div><a href="#/projects/${encodeURIComponent(k.project)}">${esc(k.project)}</a> · <b>${hl(k.name)}</b> <span class="muted">${hl(k.description)}</span></div>`).join('') || '<div class="muted">—</div>'}
     <h3>Prompt (${r.prompts.length})</h3>${r.prompts.map((p) => `<div class="prompt"><span class="muted">${dt(p.ts)} · <a href="#/projects/${encodeURIComponent(p.project)}">${esc(p.project)}</a></span>\n${hl(p.text)}</div>`).join('') || '<div class="muted">—</div>'}
-  </div>`;
+  </div>
+  <dialog id="xdlg"><h3 id="xdlg-t"></h3><pre id="xdlg-c"></pre><form method="dialog" style="text-align:right"><button>Đóng</button></form></dialog>`;
+  bindExtLinks($('#app'));
 }
 
 // ---------- SETTINGS ----------
@@ -687,9 +765,11 @@ async function route() {
   $('#nav-usage').classList.toggle('on', h.startsWith('/usage'));
   $('#nav-settings').classList.toggle('on', h.startsWith('/settings'));
   $('#nav-tips').classList.toggle('on', h.startsWith('/tips'));
+  $('#nav-ext').classList.toggle('on', h.startsWith('/extensions'));
   try {
     if (h.startsWith('/settings')) await renderSettings();
     else if (h.startsWith('/tips')) await renderTips();
+    else if (h.startsWith('/extensions')) await renderExtensions();
     else if (h.startsWith('/usage')) await renderUsage();
     else if (h.startsWith('/search/')) await renderSearch(h.slice(8));
     else if (h.startsWith('/projects/')) await renderProjectDetail(h.slice(10));

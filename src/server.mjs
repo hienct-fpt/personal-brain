@@ -7,7 +7,8 @@ import { openDb, loadConfig, saveConfig, localDay, HOME } from './lib.mjs';
 import { getApiKey, setApiKey, keyHint } from './secrets.mjs';
 import { PROVIDERS, ProviderError, listModels, providerReady } from './providers.mjs';
 import { ingest } from './ingest.mjs';
-import { search as ftsSearch, ensureSearchIndex } from './query.mjs';
+import { search as ftsSearch, ensureSearchIndex, extensionsOverview } from './query.mjs';
+import { listKit } from './kit.mjs';
 import { summarizeProject, NoApiKeyError, EFFORTS, aiConfig, activeProvider } from './summarize.mjs';
 
 const cfg = loadConfig();
@@ -137,9 +138,19 @@ function project(name) {
     tools: Object.entries(toolCount).sort((a, b) => b[1] - a[1]).slice(0, 12),
     prompts: all('SELECT session_id, ts, text FROM prompts WHERE project = ? ORDER BY ts DESC LIMIT 40', name),
     knowledge: all('SELECT name, description, content, mtime FROM knowledge WHERE project = ? ORDER BY mtime DESC', name),
+    extensions: extensionsOverview(db, { project: name }).items.filter((x) => x.uses).map(({ copies, ...x }) => x),
+    localExtensions: all(`SELECT kind, name, MAX(description) description, COUNT(*) copies FROM extensions WHERE project = ?
+      GROUP BY kind, name ORDER BY kind, name`, name),
     daily: all('SELECT day, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY day ORDER BY day', name),
     byModel: all('SELECT model, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY model ORDER BY cost DESC', name),
   };
+}
+
+// Starter kit (src/kit) + where each item is already installed (same kind + name in a user/project .claude/).
+function kit() {
+  const where = all("SELECT kind, name, scope, project FROM extensions WHERE scope IN ('user', 'project')");
+  return listKit().map(({ src, ...x }) => ({ ...x,
+    installed: [...new Set(where.filter((w) => w.kind === x.kind && w.name === x.name).map((w) => w.project ?? '~/.claude'))] }));
 }
 
 // FTS5 ranked search (accent-insensitive, prefix match) grouped for the search view.
@@ -149,6 +160,7 @@ function search(q) {
     sessions: hits('session', 20).map((h) => ({ id: h.ref, project: h.project, title: h.title, started_at: h.ts })),
     knowledge: hits('knowledge', 20).map((h) => ({ project: h.project, name: h.title,
       description: get('SELECT description FROM knowledge WHERE path = ?', h.ref)?.description ?? '' })),
+    extensions: hits('extension', 15).map((h) => ({ project: h.project, title: h.title, snippet: h.snippet, path: h.ref })),
     summaries: hits('summary', 10).map((h) => ({ project: h.project, ts: h.ts, snippet: h.snippet })),
     prompts: hits('prompt', 40).map((h) => ({ project: h.project, ts: h.ts, text: h.raw })),
   };
@@ -387,6 +399,12 @@ const server = createServer(async (req, res) => {
     if (p === '/api/projects') return send(res, 200, projects());
     if (p === '/api/activity') return send(res, 200, activity(url.searchParams.get('name'), Number(url.searchParams.get('days') ?? 182)));
     if (p === '/api/project') return send(res, 200, project(url.searchParams.get('name') ?? ''));
+    if (p === '/api/kit') return send(res, 200, kit());
+    if (p === '/api/extensions') return send(res, 200, extensionsOverview(db, { since: sinceMs(Number(url.searchParams.get('days') ?? 0)) }));
+    if (p === '/api/extension') {
+      const e = get('SELECT path, kind, name, scope, project, description, outline, meta, content, mtime FROM extensions WHERE path = ?', url.searchParams.get('path') ?? '');
+      return e ? send(res, 200, { ...e, meta: JSON.parse(e.meta || '{}') }) : send(res, 404, { error: 'Không tìm thấy' });
+    }
     if (p === '/api/search') return send(res, 200, search(url.searchParams.get('q') ?? ''));
     if (p === '/api/refresh' && req.method === 'POST') { await runIngest(); return send(res, 200, { ok: true, ...state.lastResult }); }
     if (p === '/api/summarize' && req.method === 'POST') {

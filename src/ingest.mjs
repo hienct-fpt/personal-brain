@@ -6,8 +6,11 @@ import { join, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { openDb, loadConfig, projectOf, isExcluded, redact, localDay } from './lib.mjs';
 import { rebuildSearchIndex } from './query.mjs';
+import { ingestExtensions, usageOfToolUse } from './extensions.mjs';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+// Bump to force a one-time full re-ingest when parseSession starts extracting new data from old transcripts.
+const INGEST_VERSION = 1; // 1 = skill/agent/command usage (ext_usage)
 const SKIP_PROMPT = /^(<local-command|<system-reminder|<task-notification|Caveat:|\[Request interrupted|<bash-|<user-memory)/;
 
 function listSessions(projectsDir) {
@@ -53,7 +56,7 @@ function promptText(m) {
 async function parseSession(s, cfg) {
   const units = cfg.costUnits;
   const r = { cwd: null, title: null, customTitle: null, start: Infinity, end: 0, prompts: [], msgs: new Map(),
-    tools: {}, files: new Set(), costState: null, turns: 0, toolErrors: 0, subagents: s.files.length - 1 };
+    tools: {}, ext: [], files: new Set(), costState: null, turns: 0, toolErrors: 0, subagents: s.files.length - 1 };
   for (const [i, file] of s.files.entries()) {
     const isMain = i === 0;
     for await (const m of lines(file)) {
@@ -68,6 +71,9 @@ async function parseSession(s, cfg) {
           const c = m.message?.content;
           if (Array.isArray(c)) for (const b of c) if (b.type === 'tool_result' && b.is_error) r.toolErrors++;
           if (!isMain || m.isSidechain) break;
+          const raw = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : '';
+          const cmd = raw.match(/<command-name>\/?([^<\s]+)<\/command-name>/);
+          if (cmd && !m.isMeta) r.ext.push({ ts, kind: 'command', name: cmd[1] });
           const t = promptText(m);
           if (t) r.prompts.push({ ts, text: t });
           break;
@@ -78,6 +84,8 @@ async function parseSession(s, cfg) {
           for (const b of Array.isArray(msg.content) ? msg.content : []) {
             if (b.type !== 'tool_use') continue;
             r.tools[b.name] = (r.tools[b.name] ?? 0) + 1;
+            const x = usageOfToolUse(b);
+            if (x) r.ext.push({ ts, ...x });
             const fp = b.input?.file_path ?? b.input?.notebook_path;
             if (EDIT_TOOLS.has(b.name) && fp) r.files.add(String(fp).replace(/\\/g, '/'));
           }
@@ -103,7 +111,7 @@ async function parseSession(s, cfg) {
 
 function writeSession(db, s, r, cfg) {
   const project = projectOf(r.cwd, cfg);
-  for (const t of ['sessions', 'prompts', 'usage', 'model_cost']) {
+  for (const t of ['sessions', 'prompts', 'usage', 'model_cost', 'ext_usage']) {
     db.prepare(`DELETE FROM ${t} WHERE ${t === 'sessions' ? 'id' : 'session_id'} = ?`).run(s.id);
   }
   if (isExcluded(project, cfg) || r.start === Infinity) return project;
@@ -130,6 +138,8 @@ function writeSession(db, s, r, cfg) {
   }
   const insP = db.prepare('INSERT INTO prompts VALUES (?,?,?,?)');
   for (const p of r.prompts) insP.run(s.id, Number.isNaN(p.ts) ? r.start : p.ts, project, p.text);
+  const insX = db.prepare('INSERT INTO ext_usage VALUES (?,?,?,?,?)');
+  for (const x of r.ext) insX.run(s.id, project, Number.isNaN(x.ts) ? r.start : x.ts, x.kind, x.name);
 
   db.prepare(`INSERT INTO sessions (id, project, cwd, title, started_at, ended_at, n_prompts, n_turns, cost_usd, cost_source,
     lines_added, lines_removed, tools, files_edited, tool_errors, subagents) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
@@ -191,7 +201,8 @@ function candidateCwds(cfg, db) {
 export async function ingest({ full = false, log = console.log } = {}) {
   const cfg = loadConfig();
   const db = openDb();
-  if (full) db.exec('DELETE FROM ingest_state');
+  const ver = db.prepare('PRAGMA user_version').get().user_version;
+  if (full || ver < INGEST_VERSION) db.exec('DELETE FROM ingest_state');
   const t0 = Date.now();
   const sessions = listSessions(cfg.claudeProjectsDir);
   const state = new Map(db.prepare('SELECT session_id, signature FROM ingest_state').all().map((r) => [r.session_id, r.signature]));
@@ -220,8 +231,10 @@ export async function ingest({ full = false, log = console.log } = {}) {
   db.exec('BEGIN');
   estimateMissingCosts(db);
   ingestKnowledge(db, cfg, dirCwd);
+  ingestExtensions(db, cfg, [...known.values()]);
   rebuildSearchIndex(db);
   db.exec('COMMIT');
+  if (ver < INGEST_VERSION) db.exec(`PRAGMA user_version = ${INGEST_VERSION}`);
   const n = db.prepare('SELECT COUNT(*) n FROM sessions').get().n;
   db.close();
   log(`ingest: ${changed} session thay đổi / ${sessions.length} transcript, ${n} session trong DB, ${Date.now() - t0} ms`);

@@ -16,18 +16,18 @@ const HERE = projectOf(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), cfg);
 
 const clip = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
 const money = (x) => `$${(x ?? 0).toFixed(2)}`;
-const KIND = { session: 'Session', prompt: 'Prompt', knowledge: 'Knowledge', summary: 'Tóm tắt AI' };
+const KIND = { session: 'Session', prompt: 'Prompt', knowledge: 'Knowledge', summary: 'Tóm tắt AI', extension: 'Skill/agent/command' };
 
 const TOOLS = [
   {
     name: 'brain_search',
-    description: 'Tìm trong lịch sử làm việc với Claude Code của người dùng (tiêu đề session, prompt đã gõ, knowledge/memory, tóm tắt AI theo project). '
+    description: 'Tìm trong lịch sử làm việc với Claude Code của người dùng (tiêu đề session, prompt đã gõ, knowledge/memory, tóm tắt AI theo project, skill/agent/slash command đã cài). '
       + 'Dùng khi người dùng hỏi "lần trước…", "tôi đã từng…", "đã quyết định gì về…", hoặc khi cần ngữ cảnh từ các session trước. '
       + 'Không phân biệt dấu tiếng Việt, khớp đầu từ, xếp theo độ liên quan.',
     inputSchema: { type: 'object', properties: {
       query: { type: 'string', description: 'Từ khoá (tiếng Việt có/không dấu hoặc tiếng Anh)' },
       project: { type: 'string', description: 'Chỉ tìm trong project này (tuỳ chọn)' },
-      kinds: { type: 'array', items: { enum: ['session', 'prompt', 'knowledge', 'summary'] }, description: 'Lọc loại kết quả (tuỳ chọn)' },
+      kinds: { type: 'array', items: { enum: ['session', 'prompt', 'knowledge', 'summary', 'extension'] }, description: 'Lọc loại kết quả (tuỳ chọn)' },
       limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Số kết quả tối đa (mặc định 15)' },
     }, required: ['query'] },
   },

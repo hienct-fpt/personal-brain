@@ -17,6 +17,10 @@ export function rebuildSearchIndex(db) {
     add('knowledge', k.path, k.project, k.mtime, k.name, `${k.description}\n${k.content}`);
   for (const m of db.prepare('SELECT project, generated_at, content FROM summaries').all())
     add('summary', m.project, m.project, m.generated_at, m.project, summaryText(m.content));
+  // skills/agents/commands: name + description + outline only (full bodies would drown the user's own history)
+  for (const e of db.prepare('SELECT path, kind, name, scope, project, description, outline, mtime FROM extensions').all())
+    add('extension', e.path, e.project ?? `(${e.scope})`, e.mtime, `${e.kind} ${e.name}`, `${e.description}
+${e.outline}`);
 }
 
 // DB from before the index existed (or never ingested since): build it once.
@@ -101,4 +105,36 @@ export function recent(db, days = 7, project = null) {
   return db.prepare(`SELECT project, title, started_at, ended_at, n_prompts, cost_usd FROM sessions
     WHERE ended_at >= ? ${project ? 'AND project = ?' : ''} ORDER BY ended_at DESC LIMIT 200`)
     .all(...(project ? [since, project] : [since])).map((s) => ({ ...s, day: localDay(s.ended_at) }));
+}
+
+// Skills / subagents / slash commands: on-disk inventory merged with transcript usage.
+// Copies with the same name (nested repos, user + synced…) collapse into one item; a skill and a command with
+// the same name are one item too (a skill is invoked as /name). Usage with a plugin prefix ("plugin:name")
+// also matches the bare name. Usage with no file on disk = built-in (/clear, general-purpose agent…).
+export function extensionsOverview(db, { since = 0, project = null } = {}) {
+  const fam = (k) => (k === 'agent' ? 'agent' : 'sc');
+  const groups = new Map();
+  const make = (key, name, extra) => { const g = { key, name, kinds: [], description: '', outline: '', meta: {}, path: null,
+    copies: [], uses: 0, sessions: new Set(), last: null, projects: new Map(), byKind: {}, ...extra }; groups.set(key, g); return g; };
+  for (const e of db.prepare('SELECT path, kind, name, scope, project, description, outline, meta FROM extensions ORDER BY mtime DESC').all()) {
+    const key = `${fam(e.kind)}:${e.name.toLowerCase()}`;
+    const g = groups.get(key) ?? make(key, e.name, { description: e.description, outline: e.outline, meta: JSON.parse(e.meta || '{}'), path: e.path });
+    if (!g.kinds.includes(e.kind)) g.kinds.push(e.kind);
+    if (!g.description && e.description) g.description = e.description;
+    g.copies.push({ scope: e.scope, project: e.project, path: e.path });
+  }
+  const rows = db.prepare(`SELECT session_id, project, ts, kind, name FROM ext_usage WHERE ts >= ? ${project ? 'AND project = ?' : ''}`)
+    .all(...(project ? [since, project] : [since]));
+  for (const u of rows) {
+    const n = u.name.toLowerCase(), f = fam(u.kind);
+    const g = groups.get(`${f}:${n}`) ?? groups.get(`${f}:${n.slice(n.indexOf(':') + 1)}`) ?? make(`${f}:${n}`, u.name, { builtin: true });
+    if (g.builtin && !g.kinds.includes(u.kind)) g.kinds.push(u.kind);
+    g.uses++; g.sessions.add(u.session_id); g.last = Math.max(g.last ?? 0, u.ts);
+    g.projects.set(u.project, (g.projects.get(u.project) ?? 0) + 1);
+    g.byKind[u.kind] = (g.byKind[u.kind] ?? 0) + 1;
+  }
+  const items = [...groups.values()].map((g) => ({ ...g, builtin: !!g.builtin, sessions: g.sessions.size,
+    projects: [...g.projects].sort((a, b) => b[1] - a[1]) }))
+    .sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name));
+  return { items, events: rows.length };
 }

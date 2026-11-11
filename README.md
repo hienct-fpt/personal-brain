@@ -5,6 +5,7 @@ A local dashboard that pulls together what you have done with **Claude Code**, p
 - **Projects**: what you are working on, what is done, decisions, knowledge. Includes an activity heatmap, a weekly timeline, a Kanban board and AI summaries.
 - **AI usage**: tokens, models, cost by day / project / model / hour of day; cache hit rate, tool errors, subagents.
 - **💡 Optimization tips**: warns when Opus dominates cost (with estimated savings from switching to Sonnet), heavy subagent use, many tool errors, low cache hit rate, long expensive sessions, repeated prompts; each item comes with a concrete action.
+- **🧩 Skills**: which skills, subagents and slash commands exist on your machine (user, claude.ai-synced, plugins, every project's `.claude/`) and which ones you actually use — call counts, sessions, last use, projects — each with a content summary (frontmatter description + heading outline).
 - **Personal knowledge for Claude**: Claude Code can search your past sessions, prompts, memory files and AI summaries from any project via MCP.
 
 Data is read straight from Claude Code transcripts (`~/.claude/projects`), stored in SQLite (`node:sqlite`) and **stays on your machine**.
@@ -118,9 +119,29 @@ brain autostart on|off     start in the background at Windows logon
 brain ingest [--full]      read new transcripts (--full: re-read everything)
 brain summarize "<proj>"   AI summary for one project
 brain version              installed version
+brain kit                  list the starter kit (sample skills / agents / slash commands)
+brain kit add <name…|all>  copy them into ./.claude  (--dir <project>, --user = ~/.claude, --force, --dry-run)
+brain kit remove <name…>   remove them again (only unmodified copies unless --force)
 ```
 
-**Search** (search box on the dashboard): SQLite FTS5 over session titles, prompts, knowledge and AI summaries. Accent-insensitive ("quyet dinh" matches "quyết định"), prefix matching, ranked by relevance.
+**Search** (search box on the dashboard): SQLite FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive ("quyet dinh" matches "quyết định"), prefix matching, ranked by relevance.
+
+### Starter kit (`brain kit`)
+
+Sample skills, subagents and slash commands you can copy into any project's `.claude/` (or `~/.claude` with `--user`). Run `brain kit add …` from the project folder; existing or locally modified files are never overwritten without `--force`, and `remove` only deletes unmodified copies. The 🧩 Skills tab shows where each item is already installed.
+
+| Kind | Name | What it does |
+| --- | --- | --- |
+| skill | `brain-recall` | pulls prior context for the current project from Personal Brain (MCP) before non-trivial work |
+| skill | `bugfix-flow` | reproduce → isolate → fix root cause → regression check → honest report |
+| skill | `verify-before-done` | finds and runs the project's own lint/test/build commands, reviews the diff |
+| agent | `code-reviewer` | read-only review of uncommitted changes (sonnet) |
+| agent | `test-runner` | runs checks, returns a compact pass/fail summary (haiku) |
+| agent | `brain-researcher` | searches your history via the MCP tools, returns a dated brief (haiku) |
+| command | `/brain [topic]` | brief on the current project: current work, decisions, open items, recent sessions |
+| command | `/recap [file]` | session recap for handoff (goal, done, decisions, verified, next) |
+| command | `/check [scope]` | run the project's checks and summarize |
+| command | `/commit-msg` | draft a commit message from the staged diff (does not commit) |
 
 ### Ask the brain from Claude Code (MCP)
 
@@ -128,7 +149,7 @@ The installer registers the MCP server `personal-brain` (user scope, read-only),
 
 | Tool | For questions like | Returns |
 | --- | --- | --- |
-| `brain_search(query, project?, kinds?, limit?)` | "how did I fix the CSRF bug last time?" | best-matching prompts / sessions / knowledge / AI summaries, with excerpt and date |
+| `brain_search(query, project?, kinds?, limit?)` | "how did I fix the CSRF bug last time?" | best-matching prompts / sessions / knowledge / AI summaries / installed skills·agents·commands, with excerpt and date |
 | `brain_project(name?)` | "where is project X at, what did we decide?" | AI summary, knowledge, recent sessions, most-edited files, latest prompts. Empty `name` = current project |
 | `brain_recent(days?, project?)` | "what did I work on this week?" | sessions grouped by day, with prompt count and cost |
 
