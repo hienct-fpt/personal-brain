@@ -7,7 +7,7 @@ import { openDb, loadConfig, saveConfig, localDay, HOME } from './lib.mjs';
 import { getApiKey, setApiKey, keyHint } from './secrets.mjs';
 import { PROVIDERS, ProviderError, listModels, providerReady } from './providers.mjs';
 import { ingest } from './ingest.mjs';
-import { search as ftsSearch, ensureSearchIndex, extensionsOverview } from './query.mjs';
+import { search as ftsSearch, ensureSearchIndex, extensionsOverview, profile } from './query.mjs';
 import { listKit } from './kit.mjs';
 import { summarizeProject, NoApiKeyError, EFFORTS, aiConfig, activeProvider } from './summarize.mjs';
 
@@ -137,7 +137,7 @@ function project(name) {
     files: [...fileCount].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([path, sessions]) => ({ path, sessions })),
     tools: Object.entries(toolCount).sort((a, b) => b[1] - a[1]).slice(0, 12),
     prompts: all('SELECT session_id, ts, text FROM prompts WHERE project = ? ORDER BY ts DESC LIMIT 40', name),
-    knowledge: all('SELECT name, description, content, mtime FROM knowledge WHERE project = ? ORDER BY mtime DESC', name),
+    knowledge: all('SELECT type, name, description, content, mtime FROM knowledge WHERE project = ? ORDER BY mtime DESC', name),
     extensions: extensionsOverview(db, { project: name }).items.filter((x) => x.uses).map(({ copies, ...x }) => x),
     localExtensions: all(`SELECT kind, name, MAX(description) description, COUNT(*) copies FROM extensions WHERE project = ?
       GROUP BY kind, name ORDER BY kind, name`, name),
@@ -400,6 +400,7 @@ const server = createServer(async (req, res) => {
     if (p === '/api/activity') return send(res, 200, activity(url.searchParams.get('name'), Number(url.searchParams.get('days') ?? 182)));
     if (p === '/api/project') return send(res, 200, project(url.searchParams.get('name') ?? ''));
     if (p === '/api/kit') return send(res, 200, kit());
+    if (p === '/api/profile') return send(res, 200, profile(db).map(({ path, ...k }) => k));
     if (p === '/api/extensions') return send(res, 200, extensionsOverview(db, { since: sinceMs(Number(url.searchParams.get('days') ?? 0)) }));
     if (p === '/api/extension') {
       const e = get('SELECT path, kind, name, scope, project, description, outline, meta, content, mtime FROM extensions WHERE path = ?', url.searchParams.get('path') ?? '');

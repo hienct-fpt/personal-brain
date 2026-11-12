@@ -1,5 +1,5 @@
 // Read-side queries shared by the dashboard server and the MCP server: full-text search (FTS5), project brief, recent work.
-import { localDay } from './lib.mjs';
+import { localDay, PROFILE_TYPES } from './lib.mjs';
 
 // unicode61 + remove_diacritics folds "quyết" → "quyet" but treats "đ" as its own letter; fold it ourselves (1:1 chars).
 export const fold = (s) => String(s ?? '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
@@ -49,20 +49,41 @@ export function snippet(text, q, width = 220) {
   return (start > 0 ? '…' : '') + t.slice(start, start + width).trim() + (start + width < t.length ? '…' : '');
 }
 
+// Recency boost: a hit from today ranks up to RECENCY_WEIGHT× better than its bm25 alone; the boost halves every
+// RECENCY_HALF_LIFE_DAYS. Hits without a timestamp get no boost. bm25() is negative (lower = better), so we multiply.
+const RECENCY_WEIGHT = 0.5;
+const RECENCY_HALF_LIFE_DAYS = 60;
+export const recencyFactor = (ts, now = Date.now()) =>
+  ts > 0 ? 1 + RECENCY_WEIGHT * 0.5 ** (Math.max(0, now - ts) / 864e5 / RECENCY_HALF_LIFE_DAYS) : 1;
+
 // Ranked hits: [{kind, ref, project, ts, title, raw, snippet}]. All words must match (prefix); falls back to any word.
-export function search(db, q, { project = null, kinds = null, limit = 30 } = {}) {
+// since/until (epoch ms, inclusive) restrict by the hit's timestamp. Ranking = bm25 × recency boost.
+export function search(db, q, { project = null, kinds = null, limit = 30, since = null, until = null } = {}) {
   const toks = tokensOf(q);
   if (!toks.length) return [];
   const where = ['search_fts MATCH ?'];
   const args = [];
   if (project) { where.push('project = ?'); args.push(project); }
   if (kinds?.length) { where.push(`kind IN (${kinds.map(() => '?').join(',')})`); args.push(...kinds); }
-  const run = (expr) => db.prepare(`SELECT kind, ref, project, ts, title, raw FROM search_fts WHERE ${where.join(' AND ')}
-    ORDER BY bm25(search_fts) LIMIT ?`).all(expr, ...args, limit);
+  if (since != null) { where.push('ts >= ?'); args.push(since); }
+  if (until != null) { where.push('ts <= ?'); args.push(until); }
+  // over-fetch by bm25, then re-rank with the recency boost
+  const pool = Math.min(Math.max(limit * 4, 60), 400);
+  const run = (expr) => db.prepare(`SELECT kind, ref, project, ts, title, raw, bm25(search_fts) score FROM search_fts
+    WHERE ${where.join(' AND ')} ORDER BY score LIMIT ?`).all(expr, ...args, pool);
   const terms = toks.map((t) => `"${t}"*`);
   let rows = run(terms.join(' '));
   if (!rows.length && terms.length > 1) rows = run(terms.join(' OR '));
-  return rows.map((r) => ({ ...r, snippet: snippet(r.raw || r.title, q) }));
+  const now = Date.now();
+  return rows.map((r) => ({ r, s: r.score * recencyFactor(r.ts, now) }))
+    .sort((a, b) => a.s - b.s).slice(0, limit)
+    .map(({ r: { score, ...r } }) => ({ ...r, snippet: snippet(r.raw || r.title, q) }));
+}
+
+// Memories about the person (types user + feedback) from every project — they apply everywhere, not just where saved.
+export function profile(db) {
+  return db.prepare(`SELECT path, project, type, name, description, content, mtime FROM knowledge
+    WHERE type IN (${PROFILE_TYPES.map(() => '?').join(',')}) ORDER BY type DESC, mtime DESC`).all(...PROFILE_TYPES);
 }
 
 // Exact project name, else a unique case-insensitive substring match. Returns { name } or { candidates }.
@@ -92,7 +113,7 @@ export function projectBrief(db, name) {
     last: sessions[0]?.ended_at ?? null,
     cost: sessions.reduce((a, s) => a + (s.cost_usd ?? 0), 0),
     summary: sum ? { generated_at: sum.generated_at, ...JSON.parse(sum.content) } : null,
-    knowledge: db.prepare('SELECT name, description, content, mtime FROM knowledge WHERE project = ? ORDER BY mtime DESC').all(name),
+    knowledge: db.prepare('SELECT type, name, description, content, mtime FROM knowledge WHERE project = ? ORDER BY mtime DESC').all(name),
     recent: sessions.slice(0, 10).map(({ files_edited, cwd, ...s }) => s),
     files: [...files].sort((a, b) => b[1] - a[1]).slice(0, 10),
     prompts: db.prepare('SELECT ts, text FROM prompts WHERE project = ? ORDER BY ts DESC LIMIT 10').all(name),

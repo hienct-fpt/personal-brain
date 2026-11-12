@@ -149,9 +149,10 @@ The installer registers the MCP server `personal-brain` (user scope, read-only),
 
 | Tool | For questions like | Returns |
 | --- | --- | --- |
-| `brain_search(query, project?, kinds?, limit?)` | "how did I fix the CSRF bug last time?" | best-matching prompts / sessions / knowledge / AI summaries / installed skills·agents·commands, with excerpt and date |
-| `brain_project(name?)` | "where is project X at, what did we decide?" | AI summary, knowledge, recent sessions, most-edited files, latest prompts. Empty `name` = current project |
+| `brain_search(query, project?, kinds?, since?, until?, days?, limit?)` | "how did I fix the CSRF bug last time?", "what did I decide about X in October?" | best-matching prompts / sessions / knowledge / AI summaries / installed skills·agents·commands, with excerpt and date. Ranked by relevance with a boost for recent items; `since`/`until` (`YYYY-MM-DD`) or `days` limit the time window |
+| `brain_project(name?)` | "where is project X at, what did we decide?" | AI summary, knowledge (tagged with its memory type), recent sessions, most-edited files, latest prompts. Empty `name` = current project |
 | `brain_recent(days?, project?)` | "what did I work on this week?" | sessions grouped by day, with prompt count and cost |
+| `brain_profile(type?)` | "how does this user like to work?" | memories of type `user` (who you are) and `feedback` (how you want Claude to work), gathered from every project |
 
 Just ask normally in Claude Code; Claude calls the tools when needed. Check with `claude mcp get personal-brain` or `/mcp` inside Claude Code.
 Register manually (if you installed with `--no-mcp`, or `claude` was not available at install time):
@@ -173,7 +174,7 @@ flowchart LR
   DB --> S["server.mjs<br/>127.0.0.1:4377"] --> UI["Dashboard"]
   S -->|"on start + periodically + ↻ button"| I
   S -->|"optional"| AI["AI summary<br/>(selected provider)"]
-  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code<br/>brain_search / brain_project / brain_recent"]
+  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code<br/>brain_search / brain_project / brain_recent / brain_profile"]
 ```
 
 To use AI summaries (in the dashboard's **⚙ Cài đặt** / Settings tab):

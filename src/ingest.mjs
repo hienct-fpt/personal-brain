@@ -4,7 +4,7 @@ import { createReadStream, readdirSync, statSync, existsSync, readFileSync } fro
 import { createInterface } from 'node:readline';
 import { join, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { openDb, loadConfig, projectOf, isExcluded, redact, localDay } from './lib.mjs';
+import { openDb, loadConfig, projectOf, isExcluded, redact, localDay, MEMORY_TYPES } from './lib.mjs';
 import { rebuildSearchIndex } from './query.mjs';
 import { ingestExtensions, usageOfToolUse } from './extensions.mjs';
 
@@ -167,7 +167,7 @@ function estimateMissingCosts(db) {
 // Claude Code auto-memory files (~/.claude/projects/<dir>/memory/*.md) = curated project knowledge.
 function ingestKnowledge(db, cfg, dirCwd) {
   db.exec('DELETE FROM knowledge');
-  const ins = db.prepare('INSERT OR REPLACE INTO knowledge VALUES (?,?,?,?,?,?)');
+  const ins = db.prepare('INSERT OR REPLACE INTO knowledge (path, project, name, description, content, mtime, type) VALUES (?,?,?,?,?,?,?)');
   for (const dir of readdirSync(cfg.claudeProjectsDir)) {
     const md = join(cfg.claudeProjectsDir, dir, 'memory');
     if (!existsSync(md)) continue;
@@ -177,10 +177,13 @@ function ingestKnowledge(db, cfg, dirCwd) {
       if (!f.endsWith('.md') || f === 'MEMORY.md') continue;
       const p = join(md, f);
       const text = readFileSync(p, 'utf8');
-      const fm = text.match(/^---\n([\s\S]*?)\n---\n?/);
-      const get = (k) => fm?.[1].match(new RegExp(`^${k}:\\s*(.*)$`, 'm'))?.[1]?.trim();
+      const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+      // keys may be top-level or nested (e.g. `metadata:\n  type: user`)
+      const get = (k) => fm?.[1].match(new RegExp(`^\\s*${k}:\\s*(.*?)\\s*$`, 'm'))?.[1]?.replace(/^["']|["']$/g, '');
+      const type = get('type')?.toLowerCase();
       ins.run(p, project, get('name') ?? basename(f, '.md'), get('description') ?? '',
-        redact(fm ? text.slice(fm[0].length) : text).slice(0, 4000), statSync(p).mtimeMs);
+        redact(fm ? text.slice(fm[0].length) : text).slice(0, 4000), statSync(p).mtimeMs,
+        MEMORY_TYPES.includes(type) ? type : null);
     }
   }
 }

@@ -22,7 +22,7 @@ npm test            # = check + smoke
 - `smoke` (`scripts/smoke.mjs`): starts `src/server.mjs` with `BRAIN_PORT=4399` on the dev DB `src/brain.db` and checks:
   - `/`, `/api/status|usage|insights|projects|project|activity|search|settings`;
   - search is accent-insensitive (`dinh` = `định`) and special characters do not break it;
-  - the MCP server (`src/mcp.mjs`) over stdio: initialize, 3 read-only tools, one call per tool, unknown method → -32601, nothing but JSON-RPC on stdout;
+  - the MCP server (`src/mcp.mjs`) over stdio: initialize, 4 read-only tools, one call per tool, `brain_search` time window (future → empty, bad date / since > until → isError), unknown method → -32601, nothing but JSON-RPC on stdout;
   - POST without `x-brain` / foreign Origin → 403, settings never expose API keys, server log has no errors;
   - `service.mjs` start/stop/status, then stops the server.
 - No dev DB yet → smoke still runs (the server ingests on startup) but skips per-project tests; run `npm run ingest` first to get data.

@@ -45,7 +45,7 @@ flowchart LR
   S -->|"only with an API key"| SM["summarize.mjs"]
   SM --> P["providers.mjs<br/>Claude / OpenAI / Gemini / Azure / OpenAI-compatible"]
   SM -->|"store result"| DB
-  DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_project / brain_recent"]
+  DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_project / brain_recent / brain_profile"]
   M --> CC["Claude Code (any project)"]
 ```
 
@@ -122,9 +122,9 @@ sequenceDiagram
   participant M as mcp.mjs (stdio)
   participant DB as brain.db
   CC->>M: initialize, tools/list
-  M-->>CC: 3 read-only tools + instructions
-  CC->>M: tools/call brain_search {query}
-  M->>DB: search_fts MATCH (bm25)
+  M-->>CC: 4 read-only tools + instructions
+  CC->>M: tools/call brain_search {query, since?, until?}
+  M->>DB: search_fts MATCH (bm25 × recency boost, optional time window)
   M-->>CC: text: hits with project, date, excerpt
 ```
 
@@ -164,7 +164,7 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 | `prompts` | prompts the user typed (secrets redacted, max 1,500 chars) | transcript |
 | `usage` | one row per API call: model, input/output/cache-read/cache-write tokens, allocated cost | transcript |
 | `model_cost` | USD cost per model per session | `cost-state` |
-| `knowledge` | memory files Claude saved per project | `~/.claude/projects/*/memory/*.md` |
+| `knowledge` | memory files Claude saved per project, with their frontmatter `type` (`user` / `feedback` / `project` / `reference`, top-level or under `metadata:`). `user` + `feedback` = the person-level profile, shown across projects (dashboard "👤 Về bạn", MCP `brain_profile`) | `~/.claude/projects/*/memory/*.md` |
 | `summaries` | AI summary per project (JSON) + tokens/cost of that run | provider API |
 | `extensions` | skills (`skills/<n>/SKILL.md`), subagents (`agents/**/*.md`), slash commands (`commands/**/*.md`): scope (`user`/`synced`/`plugin`/`project`), description, heading outline, model/tools, body (redacted, ≤ 6,000 chars); rebuilt every ingest | `~/.claude/`, `~/.claude/skills/synced/*/`, installed plugins, `<project>/.claude/` (workspace tree, depth 4) |
 | `ext_usage` | one row per `Skill` call, `Agent`/`Task` launch (by `subagent_type`) and `/command` typed | transcript |
@@ -223,7 +223,7 @@ The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the ta
 
 **"⚙ Cài đặt" (Settings):** register/verify/delete API keys; choose model, effort, summary language.
 
-**Search:** FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive, prefix matching, ranked by bm25. If no result matches every word, falls back to matching any word.
+**Search:** FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive, prefix matching. If no result matches every word, falls back to matching any word. Ranking = bm25 × recency boost: up to 1.5× for an item from today, the boost halving every 60 days (`RECENCY_*` in `src/query.mjs`; items without a timestamp get none). `search()` takes an optional `since`/`until` window; the MCP `brain_search` exposes it as `since`/`until` (`YYYY-MM-DD`, local day, inclusive) or `days` — time-scoped retrieval is one of the hardest abilities in LongMemEval (ICLR 2025).
 
 ## 8. AI summaries
 
@@ -276,7 +276,7 @@ Installed in `~/.claude/settings.json` (2026-11-09):
 | 3. Dashboard | Projects (portfolio + detail), AI usage, 💡 tips, search | ✅ |
 | 4. AI summaries | 5 providers (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), gated by API key, ⚙ Settings | ✅ code done — **not yet tried with a real key** |
 | 5. Hook & retention | SessionEnd + `cleanupPeriodDays` 365 | ✅ installed — confirmed via `ingest-hook.log` after the next session |
-| 6. Brain for Claude | read-only MCP server (`brain_search`, `brain_project`, `brain_recent`) + FTS5 search | ✅ smoke-tested over stdio, registered and connected — not yet tried inside a real Claude Code session |
+| 6. Brain for Claude | read-only MCP server (`brain_search`, `brain_project`, `brain_recent`, `brain_profile`) + FTS5 search; memory types + person-level profile; time-window search with recency ranking | ✅ smoke-tested over stdio, registered and connected — not yet tried inside a real Claude Code session |
 | 7. (Later) | "Summarize all active projects" button; SessionStart hook injecting the project summary; more sources (GitHub Copilot, git commits) | — |
 
 ## 12. Open decisions

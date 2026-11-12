@@ -103,6 +103,9 @@ const plain = await getJson('/api/search?q=dinh'), accented = await getJson('/ap
 const sig = (b) => JSON.stringify(['sessions', 'prompts', 'knowledge', 'summaries'].map((k) => b?.[k]?.length));
 ok('search không phân biệt dấu (dinh = định)', plain.status === 200 && sig(plain.body) === sig(accented.body), sig(plain.body));
 ok('search ký tự đặc biệt không lỗi', (await getJson('/api/search?q=%22%20OR%20*%20(')).status === 200);
+const prof = await getJson('/api/profile');
+ok('GET /api/profile chỉ user/feedback, không lộ path', prof.status === 200 && Array.isArray(prof.body)
+  && prof.body.every((k) => ['user', 'feedback'].includes(k.type) && !('path' in k)), prof.body?.length);
 
 // MCP server over stdio: handshake, tool list, one call per tool, unknown method.
 {
@@ -113,14 +116,23 @@ ok('search ký tự đặc biệt không lỗi', (await getJson('/api/search?q=%
     { id: 4, method: 'tools/call', params: { name: 'brain_project', arguments: { name: name ?? 'x' } } },
     { id: 5, method: 'tools/call', params: { name: 'brain_recent', arguments: { days: 30 } } },
     { id: 6, method: 'nope' },
+    { id: 7, method: 'tools/call', params: { name: 'brain_profile', arguments: {} } },
+    // time window in the far future → nothing; reversed window / bad date → tool error (not a protocol error)
+    { id: 8, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', since: '2999-01-01' } } },
+    { id: 9, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', since: '2026-02-30' } } },
+    { id: 10, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', since: '2026-05-02', until: '2026-05-01' } } },
+    { id: 11, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', days: 30, until: '2999-12-31' } } },
   ].map((m) => JSON.stringify({ jsonrpc: '2.0', ...m })).join('\n') + '\n';
   const r = spawnSync(process.execPath, ['--no-warnings', join(root, 'src', 'mcp.mjs')], { input: reqs, encoding: 'utf8', timeout: 20000 });
   const res = new Map(r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).map((o) => [o.id, o]));
+  const text = (i) => res.get(i)?.result?.content?.[0]?.text ?? '';
   ok('MCP initialize', res.get(1)?.result?.serverInfo?.name === 'personal-brain', r.stderr.trim().slice(0, 200));
-  ok('MCP tools/list = 3 tool chỉ đọc', res.get(2)?.result?.tools?.length === 3 && res.get(2).result.tools.every((t) => t.annotations?.readOnlyHint));
-  ok('MCP gọi đủ 3 tool', [3, 4, 5].every((i) => typeof res.get(i)?.result?.content?.[0]?.text === 'string' && !res.get(i).result.isError));
+  ok('MCP tools/list = 4 tool chỉ đọc', res.get(2)?.result?.tools?.length === 4 && res.get(2).result.tools.every((t) => t.annotations?.readOnlyHint));
+  ok('MCP gọi đủ 4 tool', [3, 4, 5, 7, 11].every((i) => typeof res.get(i)?.result?.content?.[0]?.text === 'string' && !res.get(i).result.isError));
+  ok('MCP brain_search since tương lai → không có kết quả', text(8).startsWith('Không tìm thấy') && text(8).includes('2999-01-01'), text(8).slice(0, 120));
+  ok('MCP brain_search ngày sai / since > until → isError', res.get(9)?.result?.isError && res.get(10)?.result?.isError, `${text(9)} | ${text(10)}`);
   ok('MCP method lạ → -32601', res.get(6)?.error?.code === -32601);
-  ok('MCP stdout chỉ có JSON-RPC', res.size === 6);
+  ok('MCP stdout chỉ có JSON-RPC', res.size === 11);
 }
 
 const settings = await getJson('/api/settings');

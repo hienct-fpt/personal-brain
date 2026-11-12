@@ -413,7 +413,7 @@ function sparkline(vals, w = 120, h = 26) {
 
 async function renderPortfolio() {
   const app = $('#app');
-  const [L, act] = await Promise.all([api('/api/projects'), api('/api/activity?days=182')]);
+  const [L, act, prof] = await Promise.all([api('/api/projects'), api('/api/activity?days=182'), api('/api/profile')]);
   const cnt = (st) => L.filter((p) => p.status === st).length;
   const days28 = act.filter((r) => Date.parse(r.day) >= Date.now() - 28 * 864e5).length;
   const cost30 = L.reduce((a, p) => a + p.cost_30, 0);
@@ -426,6 +426,9 @@ async function renderPortfolio() {
     <div class="tile"><div class="k">Đã có tóm tắt AI</div><div class="v">${L.filter((p) => p.summary_at).length}<span class="muted" style="font-size:16px"> / ${L.length}</span></div><div class="s">${L.reduce((a, p) => a + p.knowledge, 0)} file knowledge</div></div>
   </div>
   <div class="card"><h2>Nhịp làm việc <small>tất cả project · rê chuột để xem project trong ngày</small></h2><div id="heat"></div></div>
+  ${prof.length ? `<div class="card"><details><summary><b>👤 Về bạn</b> <span class="muted">${prof.length} memory loại user / feedback, gom từ mọi project — Claude đọc được qua <code>brain_profile</code></span></summary>
+    <div class="kgrid" style="margin-top:10px">${prof.map((k, i) => `<div class="kcard" data-pk="${i}"><b>${esc(k.name)} ${ktype(k.type)}</b><span>${esc(k.description)}</span><span>${esc(k.project)}</span></div>`).join('')}</div></details></div>
+  <dialog id="kdlg"><h3 id="kdlg-t"></h3><pre id="kdlg-c"></pre><form method="dialog" style="text-align:right"><button>Đóng</button></form></dialog>` : ''}
   <div class="chips" id="chips">
     ${['all', 'active', 'slowing', 'paused', 'archived'].map((st) => `<button data-st="${st}" class="${pfilter.status === st ? 'on' : ''}">${st === 'all' ? `Tất cả (${L.length})` : `${STATUS[st].icon} ${STATUS[st].label} (${cnt(st)})`}</button>`).join('')}
     <span class="sep"></span>
@@ -435,6 +438,9 @@ async function renderPortfolio() {
   </div>
   <div id="pcards"></div>`;
   heatmap($('#heat'), act);
+  app.querySelectorAll('[data-pk]').forEach((c) => c.onclick = () => {
+    const k = prof[Number(c.dataset.pk)]; $('#kdlg-t').textContent = `${k.name} · ${k.project}`; $('#kdlg-c').textContent = k.content; $('#kdlg').showModal();
+  });
   const draw = () => {
     const q = pfilter.q.toLowerCase();
     const list = L.filter((p) => (pfilter.status === 'all' || p.status === pfilter.status) && (pfilter.group === 'all' || p.group === pfilter.group) && p.project.toLowerCase().includes(q));
@@ -448,6 +454,10 @@ async function renderPortfolio() {
   $('#chips').querySelectorAll('[data-grp]').forEach((b) => b.onclick = () => { pfilter.group = b.dataset.grp; renderPortfolio(); });
   $('#pf').oninput = (e) => { pfilter.q = e.target.value; draw(); };
 }
+
+// memory-file type badge (Claude Code auto-memory frontmatter)
+const KTYPE = { user: '👤 về bạn', feedback: '💬 góp ý', project: '📁 project', reference: '🔗 tham chiếu' };
+const ktype = (t) => (t ? `<span class="badge">${esc(KTYPE[t] ?? t)}</span>` : '');
 
 function cardHtml(p) {
   const desc = p.headline ?? (p.last_title ? `Session gần nhất: ${p.last_title}` : 'Chưa có mô tả — mở project để tạo tóm tắt AI');
@@ -540,7 +550,7 @@ async function renderProjectDetail(name) {
       <div class="card"><h2>Nhịp làm việc</h2><div id="pheat"></div></div>
       <div class="card"><h2>📚 Knowledge</h2>
         ${S.knowledge?.length ? `<ul class="klist" style="padding-left:18px;margin:0 0 10px">${S.knowledge.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
-        ${d.knowledge.length ? `<div class="section-h" style="margin-top:10px">Memory Claude đã lưu · ${d.knowledge.length}</div><div class="kgrid">${d.knowledge.map((k, i) => `<div class="kcard" data-k="${i}"><b>${esc(k.name)}</b><span>${esc(k.description)}</span></div>`).join('')}</div>` : ''}
+        ${d.knowledge.length ? `<div class="section-h" style="margin-top:10px">Memory Claude đã lưu · ${d.knowledge.length}</div><div class="kgrid">${d.knowledge.map((k, i) => `<div class="kcard" data-k="${i}"><b>${esc(k.name)} ${ktype(k.type)}</b><span>${esc(k.description)}</span></div>`).join('')}</div>` : ''}
         ${!S.knowledge?.length && !d.knowledge.length ? '<div class="muted">Chưa có</div>' : ''}
       </div>
       <div class="card"><h2>🧩 Skill · agent · command <small><a href="#/extensions">tất cả →</a></small></h2>

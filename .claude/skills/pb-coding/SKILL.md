@@ -27,7 +27,7 @@ flowchart LR
 | `src/kit.mjs`, `src/kit/` | starter kit (sample skills/agents/commands) + `brain kit list/add/remove`; add never overwrites a modified copy, remove only deletes unmodified ones | add/change a sample, change the kit CLI (keep samples generic — public repo) |
 | `src/server.mjs` | query functions `usage()`, `activity()`, `projects()`, `project()`, `search()`, `settings()`; router in `createServer` | add/change an API |
 | `src/query.mjs` | `rebuildSearchIndex()` (FTS5 `search_fts`), `search()`, `resolveProject()`, `projectBrief()`, `recent()`, `extensionsOverview()` — shared by server + MCP | change search / what agents get back |
-| `src/mcp.mjs` | read-only stdio MCP server: `TOOLS` + handlers `brain_search/brain_project/brain_recent`; stdout is for JSON-RPC only | add/change an MCP tool (add a check in `scripts/smoke.mjs`) |
+| `src/mcp.mjs` | read-only stdio MCP server: `TOOLS` + handlers `brain_search/brain_project/brain_recent/brain_profile`; stdout is for JSON-RPC only | add/change an MCP tool (add a check in `scripts/smoke.mjs`) |
 | `src/public/index.html` | CSS, chart helpers (`stackedBars`, `hBars`, `heatmap`, `sparkline`), views `renderUsage/renderPortfolio/renderProjectDetail/renderSearch/renderSettings`, hash router `route()` | change the UI |
 | `src/summarize.mjs` | `buildContext()` (prompt sent to the AI), result JSON schema, `normalize()`, `summarizeProject()` | change summary content |
 | `src/providers.mjs` | `PROVIDERS` (UI metadata) + `impl` (`listModels`, `generate`) per provider | add a provider |

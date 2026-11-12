@@ -33,10 +33,10 @@ export function buildContext(db, project, cfg) {
     const files = JSON.parse(s.files_edited ?? '[]');
     if (files.length) out.push(`  Files sửa: ${files.slice(0, 12).map((f) => f.split('/').slice(-2).join('/')).join(', ')}`);
   }
-  const know = db.prepare('SELECT name, description, content FROM knowledge WHERE project = ? ORDER BY mtime DESC LIMIT 25').all(project);
+  const know = db.prepare('SELECT type, name, description, content FROM knowledge WHERE project = ? ORDER BY mtime DESC LIMIT 25').all(project);
   if (know.length) {
     out.push('', '## Memory/knowledge đã lưu');
-    for (const k of know) out.push(`### ${k.name} — ${k.description}`, clip(k.content, 1200));
+    for (const k of know) out.push(`### ${k.type ? `[${k.type}] ` : ''}${k.name} — ${k.description}`, clip(k.content, 1200));
   }
   return out.join('\n');
 }

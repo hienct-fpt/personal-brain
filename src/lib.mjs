@@ -97,8 +97,15 @@ export function openDb() {
   const cols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name));
   if (!cols.has('tool_errors')) db.exec('ALTER TABLE sessions ADD COLUMN tool_errors INTEGER');
   if (!cols.has('subagents')) db.exec('ALTER TABLE sessions ADD COLUMN subagents INTEGER');
+  // memory-file frontmatter type: user | feedback | project | reference (NULL = not declared)
+  const kcols = new Set(db.prepare('PRAGMA table_info(knowledge)').all().map((c) => c.name));
+  if (!kcols.has('type')) db.exec('ALTER TABLE knowledge ADD COLUMN type TEXT');
   return db;
 }
+
+// Claude Code auto-memory types. user + feedback = about the person (apply across projects); project + reference = project-bound.
+export const MEMORY_TYPES = ['user', 'feedback', 'project', 'reference'];
+export const PROFILE_TYPES = ['user', 'feedback'];
 
 const SECRET_RE = /((?:api[_-]?key|token|password|passwd|secret|bearer)\s*[:=]?\s*["']?)[^\s"']{6,}/gi;
 const KEY_RE = /\b(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g;
