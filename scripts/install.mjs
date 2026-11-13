@@ -8,7 +8,8 @@
 //   --no-hook           don't register the SessionEnd hook in ~/.claude/settings.json
 //   --no-shim           don't put a `brain` command on PATH
 //   --no-mcp            don't register the read-only MCP server "personal-brain" (needs the `claude` CLI)
-//   --no-ingest         don't run the first ingest after installing
+//   --no-copilot        don't register it for GitHub Copilot (~/.copilot/mcp-config.json, VS Code user mcp.json)
+//   --no-ingest        don't run the first ingest after installing
 //   --dry-run           print what would happen, change nothing
 //
 // Upgrades are safe: only code files are replaced. config.json, secrets.json, brain.db and logs are never touched.
@@ -27,7 +28,7 @@ const RUNTIME_FILES = new Set(['config.json', 'secrets.json', 'brain.db', 'brain
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
-if (flag('--help') || flag('-h')) { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 15).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 16).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const DIR = resolve(opt('--dir', join(homedir(), '.personal-brain')).replace(/^~(?=$|[\\/])/, homedir()));
 const RETENTION = Number(opt('--retention', '365'));
 const DRY = flag('--dry-run');
@@ -136,6 +137,33 @@ if (!flag('--no-mcp')) {
   }
 }
 
+// ---------- 5c. MCP server for GitHub Copilot (CLI + VS Code), only where Copilot/VS Code is present ----------
+if (!flag('--no-mcp') && !flag('--no-copilot')) {
+  step('MCP server personal-brain cho GitHub Copilot');
+  const args = ['--no-warnings', join(DIR, 'mcp.mjs')];
+  const vsBase = WIN ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'))
+    : process.platform === 'darwin' ? join(homedir(), 'Library', 'Application Support') : join(homedir(), '.config');
+  const targets = [
+    { file: join(homedir(), '.copilot', 'mcp-config.json'), key: 'mcpServers', entry: { type: 'local', command: 'node', args, tools: ['*'] } },
+    ...['Code', 'Code - Insiders'].map((d) => ({ file: join(vsBase, d, 'User', 'mcp.json'), key: 'servers', entry: { type: 'stdio', command: 'node', args } })),
+  ];
+  for (const t of targets) {
+    if (!existsSync(dirname(t.file))) continue; // Copilot CLI / this VS Code edition is not installed
+    let cfg = {};
+    if (existsSync(t.file)) {
+      try { cfg = JSON.parse(readFileSync(t.file, 'utf8')); }
+      catch { info(`⚠ ${t.file} có comment hoặc JSON lỗi — bỏ qua. Thêm tay vào "${t.key}": "personal-brain": ${JSON.stringify(t.entry)}`); continue; }
+    }
+    if (JSON.stringify(cfg[t.key]?.['personal-brain']) === JSON.stringify(t.entry)) { info(`${t.file}: đã có (giữ nguyên)`); continue; }
+    cfg[t.key] = { ...(cfg[t.key] ?? {}), 'personal-brain': t.entry };
+    if (!DRY) {
+      if (existsSync(t.file)) cpSync(t.file, `${t.file}.${Date.now()}.bak`);
+      writeFileSync(t.file, JSON.stringify(cfg, null, 2) + '\n');
+    }
+    info(`${DRY ? 'sẽ đăng ký' : 'đã đăng ký'} → ${t.file}`);
+  }
+}
+
 // ---------- 6. `brain` command on PATH ----------
 if (!flag('--no-shim')) {
   step('Lệnh `brain`');
@@ -158,7 +186,7 @@ if (!flag('--no-shim')) {
 
 // ---------- 7. first ingest ----------
 if (!flag('--no-ingest') && !DRY) {
-  step('Đọc transcript Claude Code lần đầu (có thể mất ~30 giây)');
+  step('Đọc transcript Claude Code + GitHub Copilot lần đầu (có thể mất ~1–2 phút)');
   const r = spawnSync(process.execPath, ['--no-warnings', join(DIR, 'ingest.mjs')], { cwd: DIR, stdio: 'inherit' });
   if (r.status !== 0) info('⚠ ingest lỗi — có thể chạy lại bằng `brain ingest`');
 }

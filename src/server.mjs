@@ -31,6 +31,8 @@ async function runIngest() {
 const all = (sql, ...a) => db.prepare(sql).all(...a);
 const get = (sql, ...a) => db.prepare(sql).get(...a);
 const sinceMs = (days) => (days > 0 ? Date.now() - days * 86400e3 : 0);
+// One name per model across sources: "copilot/claude-opus-5.5", "claude-opus-5-5" → "opus-5-5"
+const MODEL = "REPLACE(REPLACE(REPLACE(model, 'copilot/', ''), 'claude-', ''), '.', '-')";
 const sinceDay = (days) => (days > 0 ? localDay(sinceMs(days)) : '0000');
 
 function usage(days) {
@@ -44,15 +46,21 @@ function usage(days) {
     FROM sessions WHERE ended_at >= ?`, sinceMs(days));
   return {
     totals, sessions: sess,
-    daily: all(`SELECT day, model, SUM(cost_usd) cost, SUM(input+output+cache_read+cache_write) tokens, SUM(output) output
-      FROM usage WHERE day >= ? GROUP BY day, model ORDER BY day`, d),
-    byModel: all(`SELECT model, SUM(cost_usd) cost, SUM(input) input, SUM(output) output, SUM(cache_read) cache_read,
-      SUM(cache_write) cache_write, COUNT(*) calls, COUNT(DISTINCT session_id) sessions FROM usage WHERE day >= ?
-      GROUP BY model ORDER BY cost DESC`, d),
+    daily: all(`SELECT day, ${MODEL} model, SUM(cost_usd) cost, SUM(input+output+cache_read+cache_write) tokens, SUM(output) output
+      FROM usage WHERE day >= ? GROUP BY day, 2 ORDER BY day`, d),
+    byModel: all(`SELECT ${MODEL} model, SUM(cost_usd) cost, SUM(input) input, SUM(output) output, SUM(cache_read) cache_read,
+      SUM(cache_write) cache_write, COUNT(*) calls, COUNT(DISTINCT session_id) sessions,
+      COALESCE(SUM(CASE WHEN model LIKE 'copilot/%' THEN cost_usd END), 0) copilot_cost,
+      SUM(model LIKE 'copilot/%') copilot_calls FROM usage WHERE day >= ?
+      GROUP BY 1 ORDER BY cost DESC`, d),
+    // all-time order → the color of a model never changes with the time filter
+    modelOrder: all(`SELECT ${MODEL} model FROM usage GROUP BY 1 ORDER BY SUM(cost_usd) DESC, COUNT(*) DESC`).map((r) => r.model),
     byProject: all(`SELECT project, SUM(cost_usd) cost, SUM(input+output+cache_read+cache_write) tokens,
       COUNT(DISTINCT session_id) sessions FROM usage WHERE day >= ? GROUP BY project ORDER BY cost DESC`, d),
-    topSessions: all(`SELECT id, project, title, started_at, ended_at, n_prompts, cost_usd, cost_source
+    topSessions: all(`SELECT id, project, title, started_at, ended_at, n_prompts, cost_usd, cost_source, source
       FROM sessions WHERE ended_at >= ? ORDER BY cost_usd DESC LIMIT 12`, sinceMs(days)),
+    bySource: all(`SELECT COALESCE(source, 'claude') source, COUNT(*) sessions, COALESCE(SUM(n_prompts),0) prompts,
+      COALESCE(SUM(cost_usd),0) cost FROM sessions WHERE ended_at >= ? GROUP BY 1 ORDER BY cost DESC`, sinceMs(days)),
     byHour: all(`SELECT CAST(strftime('%H', ts/1000, 'unixepoch', 'localtime') AS INTEGER) hour, SUM(cost_usd) cost, COUNT(*) calls
       FROM usage WHERE day >= ? GROUP BY hour`, d),
   };
@@ -119,7 +127,7 @@ function projects() {
 
 function project(name) {
   const sessions = all(`SELECT id, title, started_at, ended_at, n_prompts, n_turns, cost_usd, cost_source,
-    lines_added, lines_removed, tools, files_edited, tool_errors, subagents FROM sessions WHERE project = ? ORDER BY started_at DESC`, name);
+    lines_added, lines_removed, tools, files_edited, tool_errors, subagents, source FROM sessions WHERE project = ? ORDER BY started_at DESC`, name);
   const fileCount = new Map();
   const toolCount = {};
   for (const s of sessions) {
@@ -142,7 +150,7 @@ function project(name) {
     localExtensions: all(`SELECT kind, name, MAX(description) description, COUNT(*) copies FROM extensions WHERE project = ?
       GROUP BY kind, name ORDER BY kind, name`, name),
     daily: all('SELECT day, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY day ORDER BY day', name),
-    byModel: all('SELECT model, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY model ORDER BY cost DESC', name),
+    byModel: all(`SELECT ${MODEL} model, SUM(cost_usd) cost FROM usage WHERE project = ? GROUP BY 1 ORDER BY cost DESC`, name),
   };
 }
 

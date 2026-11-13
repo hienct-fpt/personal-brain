@@ -10,7 +10,7 @@
   --bg: #f4f4f2; --surface-1: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
   --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
   --accent: #F37021; --link: #034EA2; --grid: #e7e6e1;
-  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-other: #a3a29c;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948; --series-other: #a3a29c;
   --seq: #2a78d6; --good: #1f8a4c; --warn: #b26b00;
   font-family: "Segoe UI", system-ui, sans-serif;
 }
@@ -20,7 +20,7 @@
     --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
     --link: #6aa6f0; --grid: #2c2c29;
-    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-other: #6d6c66;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767; --series-other: #6d6c66;
     --seq: #3987e5; --good: #4cc27f; --warn: #e0a030;
   }
 }
@@ -184,13 +184,17 @@ const day = (ms) => ms ? new Date(ms).toLocaleDateString('sv-SE') : '—';
 const dt = (ms) => ms ? new Date(ms).toLocaleString('sv-SE').slice(0, 16) : '—';
 const ago = (ms) => { if (!ms) return '—'; const d = (Date.now() - ms) / 864e5; return d < 1 ? 'hôm nay' : d < 2 ? 'hôm qua' : `${Math.floor(d)} ngày trước`; };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const shortModel = (m) => m.replace(/^claude-/, '');
+const shortModel = (m) => m.replace(/^claude-/, '').replace(/^copilot\/(claude-)?/, 'copilot · ');
+// Session source (NULL = Claude Code) → small badge
+const SOURCES = { claude: 'Claude Code', 'copilot-cli': 'Copilot CLI', 'copilot-vscode': 'Copilot VS Code' };
+const srcBadge = (s) => (s.source ? ` <span class="badge" title="Nguồn: ${SOURCES[s.source] ?? esc(s.source)}">${SOURCES[s.source] ?? esc(s.source)}</span>` : '');
 
-// Fixed model → color slot (color follows the entity, never its rank).
-const MODEL_SLOTS = ['opus', 'sonnet', 'haiku'];
+// Model → color slot by the server's all-time order (/api/usage modelOrder), so a model keeps its color whatever the
+// time filter. Models are already merged across sources (Claude Code + Copilot). 8 slots; the rest fold into gray.
+let MODEL_ORDER = [];
 function modelColor(m) {
-  const i = MODEL_SLOTS.findIndex((k) => m.includes(k));
-  return i >= 0 ? `var(--series-${i + 1})` : 'var(--series-4)';
+  const i = MODEL_ORDER.indexOf(m);
+  return i >= 0 && i < 8 ? `var(--series-${i + 1})` : 'var(--series-other)';
 }
 
 // ---------- tooltip ----------
@@ -277,7 +281,9 @@ async function renderUsage() {
   const tokens = T.input + T.output + T.cache_read + T.cache_write;
   const inTok = T.input + T.cache_read + T.cache_write;
   const cacheShare = inTok ? T.cache_read / inTok : 0;
-  const models = [...new Set(u.daily.map((r) => r.model))].sort((a, b) => MODEL_SLOTS.findIndex((k) => a.includes(k)) - MODEL_SLOTS.findIndex((k) => b.includes(k)));
+  MODEL_ORDER = u.modelOrder ?? [];
+  const rank = (m) => { const i = MODEL_ORDER.indexOf(m); return i < 0 ? 1e9 : i; };
+  const models = [...new Set(u.daily.map((r) => r.model))].sort((a, b) => rank(a) - rank(b));
   const keys = models.map((m) => ({ key: m, label: shortModel(m), color: modelColor(m) }));
   const byDay = new Map();
   for (const r of u.daily) { const d = byDay.get(r.day) ?? { day: r.day, parts: {} }; d.parts[r.model] = r.cost; byDay.set(r.day, d); }
@@ -305,19 +311,21 @@ async function renderUsage() {
   </div>
   <div class="row">
     <div class="card"><h2>Theo model</h2><table>
-      <tr><th>Model</th><th class="n">Chi phí</th><th class="n">%</th><th class="n">Input</th><th class="n">Output</th><th class="n">Cache đọc</th><th class="n">Cache ghi</th><th class="n">Session</th></tr>
+      <tr><th>Model</th><th class="n">Chi phí</th><th class="n">%</th><th class="n">Input</th><th class="n">Output</th><th class="n">Cache đọc</th><th class="n">Cache ghi</th><th class="n">Session</th><th class="n" title="Phần chi phí / lượt gọi đến từ GitHub Copilot">Qua Copilot</th></tr>
       ${u.byModel.map((m) => `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${modelColor(m.model)};margin-right:6px"></i>${esc(shortModel(m.model))}</td>
         <td class="n">${usd(m.cost)}</td><td class="n">${T.cost ? ((m.cost / T.cost) * 100).toFixed(1) : 0}%</td><td class="n">${num(m.input)}</td><td class="n">${num(m.output)}</td>
-        <td class="n">${num(m.cache_read)}</td><td class="n">${num(m.cache_write)}</td><td class="n">${m.sessions}</td></tr>`).join('')}
+        <td class="n">${num(m.cache_read)}</td><td class="n">${num(m.cache_write)}</td><td class="n">${m.sessions}</td>
+        <td class="n">${m.copilot_calls ? `${usd(m.copilot_cost)} <span class="muted">· ${num(m.copilot_calls)} lượt</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </table></div>
     <div class="card"><h2>Session tốn nhiều nhất</h2><table>
       <tr><th>Session</th><th>Ngày</th><th class="n">Prompt</th><th class="n">Chi phí</th></tr>
-      ${u.topSessions.map((s) => `<tr><td><a href="#/projects/${encodeURIComponent(s.project)}">${esc(s.project)}</a><br><span class="muted">${esc(s.title ?? '')}</span></td>
+      ${u.topSessions.map((s) => `<tr><td><a href="#/projects/${encodeURIComponent(s.project)}">${esc(s.project)}</a><br><span class="muted">${esc(s.title ?? '')}</span>${srcBadge(s)}</td>
         <td class="n">${day(s.started_at)}</td><td class="n">${s.n_prompts}</td><td class="n">${usd(s.cost_usd)}${s.cost_source === 'estimated' ? ' <span class="badge" title="Ước tính từ token">ước</span>' : ''}</td></tr>`).join('')}
     </table></div>
   </div>
   <div class="note">Nguồn: transcript Claude Code (<code>~/.claude/projects</code>) — chi phí lấy từ <code>cost-state</code> do Claude Code tự tính theo giá API list
-  (không phải hoá đơn thực nếu dùng gói subscription). ${S.est ? `${S.est} session thiếu cost-state được ước tính từ token.` : ''}
+  (không phải hoá đơn thực nếu dùng gói subscription).
+  ${u.bySource.some((x) => x.source !== 'claude') ? `GitHub Copilot (CLI + VS Code Chat): chi phí = AI credits × $0.01; chat VS Code cũ không ghi credits nên tính $0. Theo nguồn: ${u.bySource.map((x) => `${SOURCES[x.source] ?? esc(x.source)} ${x.sessions} session · ${usd(x.cost)}`).join(' · ')}.` : ''} ${S.est ? `${S.est} session thiếu cost-state được ước tính từ token.` : ''}
   Chi phí theo ngày = chi phí session chia theo token của từng lượt gọi.</div>`;
 
   app.querySelectorAll('[data-days]').forEach((b) => b.onclick = () => { usageDays = Number(b.dataset.days); renderUsage(); });
@@ -506,7 +514,7 @@ async function renderProjectDetail(name) {
     if (e.kind === 'tiny') return h + `<div class="ev" style="opacity:.7"><div class="d">${day(e.ts)}</div><div>${e.t.n} session ngắn (≤ 1 prompt — thường là chạy thử / eval tự động)</div><div class="m">${usd(e.t.cost)}</div></div>`;
     return h + (e.kind === 'done'
       ? `<div class="ev done"><div class="d">${day(e.ts)} · ✅ Hoàn thành</div><div>${esc(e.text)}</div></div>`
-      : `<div class="ev"><div class="d">${dt(e.s.started_at)}</div><div class="t">${esc(e.s.title ?? '(không tiêu đề)')}</div>
+      : `<div class="ev"><div class="d">${dt(e.s.started_at)}</div><div class="t">${esc(e.s.title ?? '(không tiêu đề)')}${srcBadge(e.s)}</div>
          <div class="m">${e.s.n_prompts} prompt · ${usd(e.s.cost_usd)}${e.s.cost_source === 'estimated' ? ' (ước)' : ''}${e.s.lines_added != null ? ` · +${e.s.lines_added}/−${e.s.lines_removed} dòng` : ''}</div></div>`);
   }).join('');
 

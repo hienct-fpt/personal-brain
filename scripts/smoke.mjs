@@ -7,7 +7,7 @@
 //   --keep      leave the server running after the checks (Ctrl+C to stop)
 import { spawn, spawnSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -60,7 +60,7 @@ ok('GET /api/status', status.status === 200 && 'ingesting' in (status.body ?? {}
 ok('status có app/pid/background', status.body?.app === 'personal-brain' && status.body?.pid === srv.pid && status.body?.background === false);
 
 const usage = await getJson('/api/usage?days=30');
-ok('GET /api/usage', usage.status === 200 && usage.body?.totals && Array.isArray(usage.body?.daily));
+ok('GET /api/usage', usage.status === 200 && usage.body?.totals && Array.isArray(usage.body?.daily) && Array.isArray(usage.body?.bySource));
 
 const ins = await getJson('/api/insights?days=30');
 ok('GET /api/insights', ins.status === 200 && Array.isArray(ins.body?.tips) && ins.body.tips.every((t) => t.id && t.title && Array.isArray(t.items) && t.actions?.length),
@@ -108,6 +108,53 @@ ok('GET /api/kit', kitApi.status === 200 && kitApi.body?.length >= 9 && kitApi.b
   const rm = kit('remove', 'all');
   ok('brain kit remove giữ file đã sửa', rm.status === 0 && existsSync(join(dot, 'commands', 'recap.md')) && !existsSync(join(dot, 'agents', 'code-reviewer.md')));
   ok('brain kit tên lạ → exit 1', kit('add', 'khong-co').status === 1);
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+// GitHub Copilot parsers against tiny synthetic fixtures (CLI events.jsonl + VS Code chat mutation log).
+{
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { listCopilotSessions, parseCopilotCli, parseCopilotVscode } = await import('../src/copilot.mjs');
+  const tmp = mkdtempSync(join(tmpdir(), 'pb-copilot-'));
+  const cliDir = join(tmp, 'copilot', 'session-state', 's1');
+  mkdirSync(cliDir, { recursive: true });
+  const ev = (type, data, min) => JSON.stringify({ type, data, id: `${type}${min}`, timestamp: new Date(Date.UTC(2026, 0, 1, 0, min)).toISOString() });
+  writeFileSync(join(cliDir, 'events.jsonl'), [
+    ev('session.start', { context: { cwd: 'C:\\work\\demo' } }, 0),
+    ev('user.message', { content: 'sửa lỗi token=abcdef123456' }, 1),
+    ev('session.usage_record', { usage: { model: 'claude-sonnet-5.5', inputTokens: 1000, outputTokens: 50, cacheReadTokens: 900, cacheWriteTokens: 90,
+      apiCallId: 'm1', copilotUsage: { totalNanoAiu: 2e9 } } }, 2),
+    ev('assistant.message', {}, 2),
+    ev('tool.execution_start', { toolName: 'edit', arguments: { path: 'C:\\work\\demo\\a.js' } }, 3),
+    ev('tool.execution_complete', { success: false }, 3),
+    ev('session.shutdown', { accountingSnapshot: { codeChanges: { linesAdded: 7, linesRemoved: 2 } } }, 4),
+  ].join('\n'));
+  const user = join(tmp, 'Code', 'User');
+  const ws = join(user, 'workspaceStorage', 'h1');
+  mkdirSync(join(ws, 'chatSessions'), { recursive: true });
+  writeFileSync(join(ws, 'workspace.json'), JSON.stringify({ folder: pathToFileURL(join(tmp, 'demo-vs')).href }));
+  writeFileSync(join(ws, 'chatSessions', 'c1.jsonl'), [
+    { kind: 0, v: { creationDate: 1767225600000, requests: [] } },
+    { kind: 2, k: ['requests'], v: [{ requestId: 'r1', timestamp: 1767225660000, modelId: 'copilot/gpt-5', message: { text: 'xin chào' }, response: [] }] },
+    { kind: 2, k: ['requests', 0, 'response'], v: [{ kind: 'toolInvocationSerialized', toolId: 'copilot_readFile', isComplete: true }] },
+    { kind: 2, k: ['requests', 0, 'response'], i: 0, v: [{ kind: 'textEditGroup', uri: { fsPath: '/x/b.ts' } }] },
+    { kind: 1, k: ['requests', 0, 'promptTokens'], v: 500 },
+    { kind: 1, k: ['requests', 0, 'copilotCredits'], v: 3 },
+    { kind: 1, k: ['customTitle'], v: 'Chào' },
+  ].map((x) => JSON.stringify(x)).join('\n'));
+  const cfg = { copilotDir: join(tmp, 'copilot'), vscodeUserDirs: [user], costUnits: { input: 1, output: 5, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2 } };
+  const list = listCopilotSessions(cfg);
+  ok('Copilot: liệt kê CLI + VS Code', list.length === 2 && list.some((x) => x.id === 'copilot-cli:s1') && list.some((x) => x.id === 'vscode:c1'), list.map((x) => x.id).join(','));
+  const cli = await parseCopilotCli(list.find((x) => x.kind === 'cli'), cfg);
+  const m = [...cli.msgs.values()][0];
+  ok('Copilot CLI: prompt đã redact, token, chi phí, file, dòng code', cli.cwd === 'C:\\work\\demo' && cli.prompts[0]?.text.includes('***') && !cli.prompts[0].text.includes('abcdef')
+    && m?.input === 10 && m.cache_read === 900 && Math.abs(m.cost - 0.02) < 1e-9 && m.model === 'copilot/claude-sonnet-5.5'
+    && cli.files.has('C:/work/demo/a.js') && cli.toolErrors === 1 && cli.lines?.added === 7, JSON.stringify(m));
+  const vs = parseCopilotVscode(list.find((x) => x.kind === 'vscode'), cfg);
+  const v = [...vs.msgs.values()][0];
+  ok('Copilot VS Code: replay mutation log', vs.customTitle === 'Chào' && vs.prompts[0]?.text === 'xin chào' && vs.files.has('/x/b.ts')
+    && !vs.tools.copilot_readFile && v?.input === 500 && Math.abs(v.cost - 0.03) < 1e-9 && vs.cwd === join(tmp, 'demo-vs'), JSON.stringify({ t: vs.tools, cwd: vs.cwd }));
   rmSync(tmp, { recursive: true, force: true });
 }
 

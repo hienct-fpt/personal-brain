@@ -23,6 +23,7 @@ flowchart LR
 | --- | --- | --- |
 | `src/lib.mjs` | config `DEFAULTS`, `SCHEMA`, `openDb()` + migrations, `redact()`, `projectOf()`, `isExcluded()`, `localDay()` | add a config key, table/column, project-naming rule |
 | `src/ingest.mjs` | `listSessions` → `parseSession` (reads JSONL) → `writeSession`; `estimateMissingCosts`; `ingestKnowledge`; `ingest()` | pull more data from transcripts |
+| `src/copilot.mjs` | GitHub Copilot sources: `listCopilotSessions`, `parseCopilotCli` (events.jsonl), `parseCopilotVscode` + `replayChatLog` (VS Code chatSessions); same result shape as `parseSession` + `source`, `lines`, per-message `cost` | read more from Copilot, support a new Copilot format |
 | `src/extensions.mjs` | `scanExtensions()` (skills/agents/commands from user dir, synced, plugins, project `.claude/`), `parseFrontmatter()`, `usageOfToolUse()` | change what counts as a skill/agent/command or its summary |
 | `src/kit.mjs`, `src/kit/` | starter kit (sample skills/agents/commands) + `brain kit list/add/remove`; add never overwrites a modified copy, remove only deletes unmodified ones | add/change a sample, change the kit CLI (keep samples generic — public repo) |
 | `src/server.mjs` | query functions `usage()`, `activity()`, `projects()`, `project()`, `search()`, `settings()`; router in `createServer` | add/change an API |

@@ -1,6 +1,6 @@
 # Personal Brain
 
-A local dashboard that pulls together what you have done with **Claude Code**, plus a read-only MCP server so Claude Code itself can look things up in that history:
+A local dashboard that pulls together what you have done with **Claude Code** and **GitHub Copilot** (Copilot CLI + VS Code Copilot Chat), plus a read-only MCP server so Claude Code itself can look things up in that history:
 
 - **Projects**: what you are working on, what is done, decisions, knowledge. Includes an activity heatmap, a weekly timeline, a Kanban board and AI summaries.
 - **AI usage**: tokens, models, cost by day / project / model / hour of day; cache hit rate, tool errors, subagents.
@@ -8,7 +8,7 @@ A local dashboard that pulls together what you have done with **Claude Code**, p
 - **🧩 Skills**: which skills, subagents and slash commands exist on your machine (user, claude.ai-synced, plugins, every project's `.claude/`) and which ones you actually use — call counts, sessions, last use, projects — each with a content summary (frontmatter description + heading outline).
 - **Personal knowledge for Claude**: Claude Code can search your past sessions, prompts, memory files and AI summaries from any project via MCP.
 
-Data is read straight from Claude Code transcripts (`~/.claude/projects`), stored in SQLite (`node:sqlite`) and **stays on your machine**.
+Data is read straight from Claude Code transcripts (`~/.claude/projects`), Copilot CLI sessions (`~/.copilot/session-state`) and VS Code Copilot Chat history (`<VS Code user dir>/workspaceStorage/*/chatSessions`), stored in SQLite (`node:sqlite`) and **stays on your machine**.
 AI summaries are optional and support Anthropic (Claude), OpenAI, Google Gemini, Azure OpenAI and OpenAI-compatible APIs (OpenRouter, DeepSeek, Groq, Ollama…).
 
 The dashboard UI is in Vietnamese.
@@ -51,6 +51,7 @@ The installer does the following:
    - adds a **SessionEnd** hook: each session is saved into `brain.db` as soon as it ends, even if the dashboard is not running;
    - raises `cleanupPeriodDays` to at least **365**, so Claude Code does not delete transcripts after 30 days.
 6. Registers the read-only MCP server `personal-brain` with `claude mcp add --scope user`, so Claude Code can query the brain. Skipped if the `claude` command is not available.
+   It is also added (with a `.bak` backup) to `~/.copilot/mcp-config.json` (Copilot CLI) and to the VS Code user `mcp.json` (stable and Insiders), if those are installed.
 7. Puts a `brain` command on PATH: `%LOCALAPPDATA%\Microsoft\WindowsApps\brain.cmd` on Windows, `~/.local/bin/brain` on macOS/Linux.
 8. Reads the transcripts for the first time.
 
@@ -65,7 +66,8 @@ flowchart TD
   E -- yes --> F["Write version.json"]
   F --> G["Edit ~/.claude/settings.json (.bak backup)<br/>SessionEnd hook + cleanupPeriodDays ≥ 365"]
   G --> G2["claude mcp add personal-brain<br/>(user scope, read-only)"]
-  G2 --> H["Put brain command on PATH"]
+  G2 --> G3["Add personal-brain to Copilot CLI<br/>+ VS Code mcp.json (if present)"]
+  G3 --> H["Put brain command on PATH"]
   H --> I["First ingest"]
   I --> J{"Old server running?"}
   J -- "in background" --> J1["Restart it"] --> Z
@@ -79,7 +81,8 @@ flowchart TD
 | `--retention <days>` | Minimum value for `cleanupPeriodDays` (default 365; `0` = leave unchanged) |
 | `--no-hook` | Do not register the SessionEnd hook |
 | `--no-shim` | Do not create the `brain` command |
-| `--no-mcp` | Do not register the `personal-brain` MCP server |
+| `--no-mcp` | Do not register the `personal-brain` MCP server (anywhere) |
+| `--no-copilot` | Do not register it for Copilot CLI / VS Code |
 | `--no-ingest` | Do not read transcripts after installing |
 | `--dry-run` | Only print what would happen, change nothing |
 
@@ -93,7 +96,7 @@ install.cmd                  # macOS/Linux: node scripts/install.mjs
 Only code files are replaced; `config.json`, `secrets.json`, `brain.db` and logs are kept.
 A dashboard running in the background is restarted automatically; one running in a terminal window must be stopped (Ctrl+C) and started again with `brain`. Check the installed version with `brain version`.
 
-**Uninstall**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) removes the hook, the `personal-brain` MCP server and the `brain` command, and deletes the code but keeps your data. Add `--purge` to delete the data too.
+**Uninstall**: `uninstall.cmd` (macOS/Linux: `node scripts/uninstall.mjs`) removes the hook, the `personal-brain` MCP server (Claude Code, Copilot CLI, VS Code) and the `brain` command, and deletes the code but keeps your data. Add `--purge` to delete the data too.
 You can then delete the cloned folder.
 
 ```mermaid
@@ -162,6 +165,15 @@ Register manually (if you installed with `--no-mcp`, or `claude` was not availab
 claude mcp add --scope user personal-brain -- node --no-warnings "<install dir>/mcp.mjs"
 ```
 
+**GitHub Copilot** uses the same tools: the installer adds `personal-brain` to `~/.copilot/mcp-config.json` and the VS Code user `mcp.json`. Manual entries:
+
+```jsonc
+// ~/.copilot/mcp-config.json
+{ "mcpServers": { "personal-brain": { "type": "local", "command": "node", "args": ["--no-warnings", "<install dir>/mcp.mjs"], "tools": ["*"] } } }
+// VS Code: Command Palette → "MCP: Open User Configuration"
+{ "servers": { "personal-brain": { "type": "stdio", "command": "node", "args": ["--no-warnings", "<install dir>/mcp.mjs"] } } }
+```
+
 `brain_project` gives the richest answer once the project has an AI summary (`brain summarize "<project>"`).
 Note: tool results go into Claude's context, i.e. through the Claude API like everything else in the session.
 
@@ -170,12 +182,13 @@ Data flow:
 ```mermaid
 flowchart LR
   T["Claude Code transcripts<br/>~/.claude/projects"] --> I["ingest.mjs"]
+  CP["Copilot CLI ~/.copilot/session-state<br/>VS Code chatSessions"] -->|"copilot.mjs"| I
   H["SessionEnd hook"] --> I
   I --> DB[("brain.db<br/>+ FTS5 index")]
   DB --> S["server.mjs<br/>127.0.0.1:4377"] --> UI["Dashboard"]
   S -->|"on start + periodically + ↻ button"| I
   S -->|"optional"| AI["AI summary<br/>(selected provider)"]
-  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code<br/>brain_search / brain_related / brain_project<br/>brain_recent / brain_profile"]
+  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code · Copilot CLI · VS Code<br/>brain_search / brain_related / brain_project<br/>brain_recent / brain_profile"]
 ```
 
 To use AI summaries (in the dashboard's **⚙ Cài đặt** / Settings tab):
@@ -194,6 +207,10 @@ flowchart LR
 | `aliases` | `[{ "match": "<regex on cwd>", "project": "<name>" }]` to group temporary folders into one project |
 | `exclude` | Project-name prefixes that are not recorded and never sent to an AI |
 | `port`, `refreshMinutes` | Server port, interval for re-reading transcripts |
+| `copilotDir` | Copilot CLI home (default `~/.copilot`); `null` = don't read Copilot CLI sessions |
+| `vscodeUserDirs` | VS Code user dirs to read Copilot Chat from; `null` (default) = auto-detect stable + Insiders, `[]` = off |
+
+GitHub Copilot notes: Copilot sessions are tagged *Copilot CLI* / *Copilot VS Code* in the dashboard and in MCP results, and their models are shown as `copilot · <model>`. Cost = AI credits × $0.01 (the rate Copilot publishes model prices in). Older VS Code chats did not record credits or tokens, so they count as $0. Copilot sessions are picked up by the periodic refresh (there is no SessionEnd hook for Copilot).
 
 ## Development
 
@@ -229,6 +246,7 @@ Layout:
 src/
   lib.mjs              config, DB schema, secret redaction, project naming
   ingest.mjs           transcripts + memory files → brain.db
+  copilot.mjs          GitHub Copilot sources: Copilot CLI events.jsonl, VS Code chatSessions (.json / .jsonl mutation log)
   query.mjs            shared queries: FTS5 index + search, project brief, recent sessions
   server.mjs           HTTP server + API
   mcp.mjs              read-only MCP server (stdio) for Claude Code
@@ -249,6 +267,7 @@ docs/PLAN.md           plan and design decisions
 - The server listens on `127.0.0.1` only. POST requests need the `x-brain: 1` header and the server's own Origin (CSRF protection).
 - API keys are never sent to the browser. Secrets in prompts are redacted before storage.
 - The MCP server is read-only and talks over stdio only (no network port).
+- Copilot data is only read (never modified). Prompts from Copilot go through the same secret redaction; tool output and file contents are not stored.
 - AI summaries send session titles, prompts and project memory to the provider you choose. Add sensitive projects to `exclude` to prevent this.
 
 ## Bugs & feedback

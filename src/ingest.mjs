@@ -7,10 +7,11 @@ import { pathToFileURL } from 'node:url';
 import { openDb, loadConfig, projectOf, isExcluded, redact, localDay, MEMORY_TYPES } from './lib.mjs';
 import { rebuildSearchIndex } from './query.mjs';
 import { ingestExtensions, usageOfToolUse } from './extensions.mjs';
+import { listCopilotSessions, parseCopilotCli, parseCopilotVscode } from './copilot.mjs';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 // Bump to force a one-time full re-ingest when parseSession starts extracting new data from old transcripts.
-const INGEST_VERSION = 1; // 1 = skill/agent/command usage (ext_usage)
+const INGEST_VERSION = 2; // 1 = skill/agent/command usage (ext_usage), 2 = sessions.source + GitHub Copilot
 const SKIP_PROMPT = /^(<local-command|<system-reminder|<task-notification|Caveat:|\[Request interrupted|<bash-|<user-memory)/;
 
 function listSessions(projectsDir) {
@@ -118,6 +119,7 @@ function writeSession(db, s, r, cfg) {
 
   const msgs = [...r.msgs.values()];
   const reported = r.costState?.modelUsage ?? null;
+  const copilot = r.source && r.source !== 'claude';
   // Distribute each model's reported cost across its messages by token-units.
   if (reported) {
     for (const [model, mu] of Object.entries(reported)) {
@@ -142,12 +144,13 @@ function writeSession(db, s, r, cfg) {
   for (const x of r.ext) insX.run(s.id, project, Number.isNaN(x.ts) ? r.start : x.ts, x.kind, x.name);
 
   db.prepare(`INSERT INTO sessions (id, project, cwd, title, started_at, ended_at, n_prompts, n_turns, cost_usd, cost_source,
-    lines_added, lines_removed, tools, files_edited, tool_errors, subagents) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    lines_added, lines_removed, tools, files_edited, tool_errors, subagents, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     s.id, project, r.cwd, r.customTitle ?? r.title ?? r.prompts[0]?.text.slice(0, 80) ?? null,
     r.start, r.end, r.prompts.length, r.turns,
-    reported ? r.costState.totalCostUSD : null, reported ? 'reported' : 'none',
-    r.costState?.totalLinesAdded ?? null, r.costState?.totalLinesRemoved ?? null,
-    JSON.stringify(r.tools), JSON.stringify([...r.files]), r.toolErrors, r.subagents);
+    copilot ? msgs.reduce((a, x) => a + (x.cost ?? 0), 0) : reported ? r.costState.totalCostUSD : null,
+    copilot ? 'copilot' : reported ? 'reported' : 'none',
+    r.lines?.added ?? r.costState?.totalLinesAdded ?? null, r.lines?.removed ?? r.costState?.totalLinesRemoved ?? null,
+    JSON.stringify(r.tools), JSON.stringify([...r.files]), r.toolErrors, r.subagents, copilot ? r.source : null);
   return project;
 }
 
@@ -208,12 +211,15 @@ export async function ingest({ full = false, log = console.log } = {}) {
   if (full || ver < INGEST_VERSION) db.exec('DELETE FROM ingest_state');
   const t0 = Date.now();
   const sessions = listSessions(cfg.claudeProjectsDir);
+  const copilot = listCopilotSessions(cfg);
   const state = new Map(db.prepare('SELECT session_id, signature FROM ingest_state').all().map((r) => [r.session_id, r.signature]));
   const dirCwd = new Map();
   let changed = 0;
-  for (const s of sessions) {
+  for (const s of [...sessions, ...copilot]) {
     if (state.get(s.id) === s.signature) continue;
-    const r = await parseSession(s, cfg);
+    let r;
+    try { r = s.kind === 'cli' ? await parseCopilotCli(s, cfg) : s.kind === 'vscode' ? parseCopilotVscode(s, cfg) : await parseSession(s, cfg); }
+    catch (e) { log(`! ${s.id}: ${e.message}`); continue; }
     db.exec('BEGIN');
     try {
       writeSession(db, s, r, cfg);
@@ -240,7 +246,7 @@ export async function ingest({ full = false, log = console.log } = {}) {
   if (ver < INGEST_VERSION) db.exec(`PRAGMA user_version = ${INGEST_VERSION}`);
   const n = db.prepare('SELECT COUNT(*) n FROM sessions').get().n;
   db.close();
-  log(`ingest: ${changed} session thay đổi / ${sessions.length} transcript, ${n} session trong DB, ${Date.now() - t0} ms`);
+  log(`ingest: ${changed} session thay đổi / ${sessions.length} transcript Claude + ${copilot.length} Copilot, ${n} session trong DB, ${Date.now() - t0} ms`);
   return { changed, total: n };
 }
 

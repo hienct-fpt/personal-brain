@@ -156,7 +156,7 @@ export function resolveProject(db, name) {
 
 // Everything worth knowing about one project, for an agent: summary, knowledge, recent sessions, hot files.
 export function projectBrief(db, name) {
-  const sessions = db.prepare(`SELECT id, cwd, title, started_at, ended_at, n_prompts, cost_usd, files_edited FROM sessions
+  const sessions = db.prepare(`SELECT id, cwd, title, started_at, ended_at, n_prompts, cost_usd, files_edited, source FROM sessions
     WHERE project = ? ORDER BY started_at DESC`).all(name);
   const files = new Map();
   const rel = (f, cwd) => { const a = f.replace(/\\/g, '/'), c = String(cwd ?? '').replace(/\\/g, '/') + '/';
@@ -180,7 +180,7 @@ export function projectBrief(db, name) {
 // Sessions that ended in the last `days` days, newest first, with their local day.
 export function recent(db, days = 7, project = null) {
   const since = Date.now() - days * 864e5;
-  return db.prepare(`SELECT project, title, started_at, ended_at, n_prompts, cost_usd FROM sessions
+  return db.prepare(`SELECT project, title, started_at, ended_at, n_prompts, cost_usd, source FROM sessions
     WHERE ended_at >= ? ${project ? 'AND project = ?' : ''} ORDER BY ended_at DESC LIMIT 200`)
     .all(...(project ? [since, project] : [since])).map((s) => ({ ...s, day: localDay(s.ended_at) }));
 }

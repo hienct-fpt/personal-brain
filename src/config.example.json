@@ -22,5 +22,9 @@
   "_costUnits": "Hệ số quy đổi token → 'đơn vị giá' (so với input). Dùng để chia chi phí theo ngày và ước tính session thiếu cost-state.",
   "costUnits": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite5m": 1.25, "cacheWrite1h": 2 },
 
+  "_copilot": "GitHub Copilot: copilotDir = thư mục Copilot CLI (null = bỏ qua); vscodeUserDirs = thư mục User của VS Code để đọc Copilot Chat (null = tự tìm Code + Code - Insiders, [] = tắt).",
+  "copilotDir": "~/.copilot",
+  "vscodeUserDirs": null,
+
   "refreshMinutes": 10
 }

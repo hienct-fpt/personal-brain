@@ -38,6 +38,7 @@ Out of scope (v1): knowledge graph, vector search, screen recording, multi-devic
 flowchart LR
   T["~/.claude/projects/**/*.jsonl<br/>(transcripts, subagents/, memory/*.md)"] --> I
   H["SessionEnd hook<br/>hook-sessionend.mjs (background)"] --> I
+  CP["GitHub Copilot<br/>~/.copilot/session-state/*/events.jsonl<br/>VS Code workspaceStorage/*/chatSessions"] -->|"copilot.mjs"| I
   I["ingest.mjs<br/>incremental by mtime/size signature"] --> DB[("brain.db")]
   DB --> S["server.mjs<br/>127.0.0.1:4377"]
   S --> UI["dashboard<br/>public/index.html"]
@@ -46,7 +47,7 @@ flowchart LR
   SM --> P["providers.mjs<br/>Claude / OpenAI / Gemini / Azure / OpenAI-compatible"]
   SM -->|"store result"| DB
   DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_related / brain_project<br/>brain_recent / brain_profile"]
-  M --> CC["Claude Code (any project)"]
+  M --> CC["Claude Code (any project)<br/>Copilot CLI · VS Code Copilot"]
 ```
 
 After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt from `sessions`, `prompts`, `knowledge`, `summaries` and `extensions` (name + description + outline only). At ~1,200 rows this takes about 0.4 s. The `entities` table is rebuilt in the same pass (~1 s on ~100 sessions).
@@ -57,10 +58,10 @@ After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt fr
 flowchart TD
   A([ingest]) --> B{"--full?"}
   B -- yes --> B1["Clear ingest_state"] --> C
-  B -- no --> C["List transcripts in claudeProjectsDir"]
+  B -- no --> C["List transcripts in claudeProjectsDir<br/>+ Copilot CLI sessions + VS Code chats"]
   C --> D{"mtime/size signature<br/>differs from ingest_state?"}
   D -- no --> C
-  D -- yes --> E["parseSession: prompts, tools, files, usage, cost-state<br/>(redact secrets)"]
+  D -- yes --> E["parseSession / parseCopilotCli / parseCopilotVscode:<br/>prompts, tools, files, usage, cost (redact secrets)"]
   E --> F["BEGIN · writeSession + ingest_state · COMMIT"]
   F -- error --> F1["ROLLBACK, log, skip"] --> C
   F --> C
@@ -139,6 +140,7 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 ├─ config.json          # project grouping, aliases, exclude, summary model/effort/language
 ├─ lib.mjs              # paths, config, DB schema + migrations, secret redaction, project names
 ├─ ingest.mjs           # transcripts + memory files → brain.db
+├─ copilot.mjs          # GitHub Copilot CLI + VS Code Copilot Chat sources
 ├─ extensions.mjs       # skills / agents / slash commands on disk + frontmatter/outline summary
 ├─ summarize.mjs        # summarize one project with the selected provider
 ├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
@@ -285,7 +287,8 @@ Installed in `~/.claude/settings.json` (2026-11-09):
 | 4. AI summaries | 5 providers (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), gated by API key, ⚙ Settings | ✅ code done — **not yet tried with a real key** |
 | 5. Hook & retention | SessionEnd + `cleanupPeriodDays` 365 | ✅ installed — confirmed via `ingest-hook.log` after the next session |
 | 6. Brain for Claude | read-only MCP server (`brain_search`, `brain_related`, `brain_project`, `brain_recent`, `brain_profile`) + FTS5 search; memory types + person-level profile; time-window search with recency ranking | ✅ smoke-tested over stdio, registered and connected — not yet tried inside a real Claude Code session |
-| 7. (Later) | "Summarize all active projects" button; SessionStart hook injecting the project summary; more sources (GitHub Copilot, git commits) | — |
+| 7. (Later) | "Summarize all active projects" button; SessionStart hook injecting the project summary; more sources (git commits) | — |
+| 8. GitHub Copilot | ingest Copilot CLI (`~/.copilot/session-state/*/events.jsonl`) + VS Code Copilot Chat (`workspaceStorage/*/chatSessions`, `.json` and `.jsonl` mutation log); `sessions.source`; cost = AI credits × $0.01; MCP registered for Copilot CLI + VS Code | ✅ smoke-tested with fixtures + real local data |
 
 ## 12. Open decisions
 

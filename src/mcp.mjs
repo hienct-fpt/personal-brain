@@ -170,7 +170,7 @@ function brainProject({ name } = {}) {
   // details, so their content is returned only when explicitly asked for via brain_profile
   const elsewhere = profile(db).filter((k) => k.project !== b.project).length;
   if (elsewhere) out.push(`\n(Còn ${elsewhere} memory về người dùng / cách làm việc lưu ở project khác — gọi brain_profile nếu cần.)`);
-  list('Session gần đây', b.recent.map((s) => `${localDay(s.started_at)} · ${clip(s.title, 100)} (${s.n_prompts} prompt)`));
+  list('Session gần đây', b.recent.map((s) => `${localDay(s.started_at)} · ${clip(s.title, 100)} (${s.n_prompts} prompt${via(s)})`));
   list('File hay sửa', b.files.map(([f, n]) => `${f} (${n} session)`));
   list('Prompt gần nhất', b.prompts.map((p) => `${localDay(p.ts)}: ${clip(p.text, 200)}`));
   return out.join('\n');
@@ -182,8 +182,11 @@ function brainRecent({ days = 7, project } = {}) {
   if (!rows.length) return `Không có session nào trong ${days} ngày qua${proj ? ` ở ${proj}` : ''}.`;
   const byDay = new Map();
   for (const s of rows) { if (!byDay.has(s.day)) byDay.set(s.day, []); byDay.get(s.day).push(s); }
-  return [...byDay].map(([d, ss]) => `## ${d}\n` + ss.map((s) => `- ${s.project} · ${clip(s.title, 100)} (${s.n_prompts} prompt, ${money(s.cost_usd)})`).join('\n')).join('\n\n');
+  return [...byDay].map(([d, ss]) => `## ${d}\n` + ss.map((s) => `- ${s.project} · ${clip(s.title, 100)} (${s.n_prompts} prompt, ${money(s.cost_usd)}${via(s)})`).join('\n')).join('\n\n');
 }
+
+// sessions from GitHub Copilot are tagged so the agent knows they did not happen in Claude Code
+function via(s) { return s.source === 'copilot-cli' ? ', Copilot CLI' : s.source === 'copilot-vscode' ? ', Copilot VS Code' : ''; }
 
 const HANDLERS = { brain_search: brainSearch, brain_related: brainRelated, brain_project: brainProject, brain_recent: brainRecent, brain_profile: brainProfile };
 

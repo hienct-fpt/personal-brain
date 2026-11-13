@@ -14,13 +14,15 @@ const DEFAULTS = {
   port: 4377,
   workspaceRoot: '~/workspace',
   claudeProjectsDir: '~/.claude/projects',
+  copilotDir: '~/.copilot',     // GitHub Copilot CLI; null = don't read
+  vscodeUserDirs: null,         // VS Code user dirs for Copilot Chat; null = auto-detect (stable + Insiders), [] = off
   projectDepth: { '*': 1 },
   aliases: [],
   exclude: ['(personal-brain)'],
   costUnits: { input: 1, output: 5, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2 },
   refreshMinutes: 10,
 };
-const PATH_KEYS = ['workspaceRoot', 'claudeProjectsDir'];
+const PATH_KEYS = ['workspaceRoot', 'claudeProjectsDir', 'copilotDir'];
 export const expandHome = (p) => (typeof p === 'string' && /^~(?=$|[\\/])/.test(p) ? homedir() + p.slice(1) : p);
 
 // config.json (written by the installer from config.example.json) over built-in defaults; "~" expands to the user's home.
@@ -43,9 +45,11 @@ CREATE TABLE IF NOT EXISTS ingest_state (
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, project TEXT NOT NULL, cwd TEXT, title TEXT,
   started_at INTEGER, ended_at INTEGER, n_prompts INTEGER, n_turns INTEGER,
-  cost_usd REAL, cost_source TEXT,            -- reported | estimated | none
+  cost_usd REAL, cost_source TEXT,            -- reported | estimated | none | copilot (AI credits)
   lines_added INTEGER, lines_removed INTEGER,
-  tools TEXT, files_edited TEXT);            -- JSON
+  tools TEXT, files_edited TEXT,             -- JSON
+  tool_errors INTEGER, subagents INTEGER,
+  source TEXT);                              -- claude (NULL) | copilot-cli | copilot-vscode
 CREATE INDEX IF NOT EXISTS ix_sessions_project ON sessions(project, started_at);
 
 CREATE TABLE IF NOT EXISTS prompts (
@@ -104,6 +108,7 @@ export function openDb() {
   const cols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name));
   if (!cols.has('tool_errors')) db.exec('ALTER TABLE sessions ADD COLUMN tool_errors INTEGER');
   if (!cols.has('subagents')) db.exec('ALTER TABLE sessions ADD COLUMN subagents INTEGER');
+  if (!cols.has('source')) db.exec('ALTER TABLE sessions ADD COLUMN source TEXT');
   // memory-file frontmatter type: user | feedback | project | reference (NULL = not declared)
   const kcols = new Set(db.prepare('PRAGMA table_info(knowledge)').all().map((c) => c.name));
   if (!kcols.has('type')) db.exec('ALTER TABLE knowledge ADD COLUMN type TEXT');

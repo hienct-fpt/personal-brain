@@ -3,7 +3,8 @@
 //
 //   node scripts/uninstall.mjs [--dir <path>] [--purge] [--dry-run]
 //
-//   Removes the SessionEnd hook from ~/.claude/settings.json, the MCP server "personal-brain" and the `brain` command.
+//   Removes the SessionEnd hook from ~/.claude/settings.json, the MCP server "personal-brain" (Claude Code, Copilot CLI,
+//   VS Code) and the `brain` command.
 //   Code files are removed; data (brain.db, config.json, secrets.json) is KEPT unless --purge.
 //   cleanupPeriodDays is left unchanged.
 import { existsSync, readFileSync, rmSync, writeFileSync, cpSync, readdirSync } from 'node:fs';
@@ -49,6 +50,23 @@ if (existsSync(settingsPath)) {
   if (cur.status === 0 && norm(cur.stdout).includes(`${norm(DIR)}/mcp.mjs`)) {
     if (!DRY) claude('mcp', 'remove', 'personal-brain', '--scope', 'user');
     info('đã gỡ MCP server personal-brain (claude mcp remove)');
+  }
+}
+
+// MCP server for GitHub Copilot (CLI + VS Code) — only entries that point at this install dir
+{
+  const vsBase = process.platform === 'win32' ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'))
+    : process.platform === 'darwin' ? join(homedir(), 'Library', 'Application Support') : join(homedir(), '.config');
+  const targets = [[join(homedir(), '.copilot', 'mcp-config.json'), 'mcpServers'],
+    ...['Code', 'Code - Insiders'].map((d) => [join(vsBase, d, 'User', 'mcp.json'), 'servers'])];
+  for (const [file, key] of targets) {
+    if (!existsSync(file)) continue;
+    let cfg; try { cfg = JSON.parse(readFileSync(file, 'utf8')); } catch { continue; }
+    const e = cfg[key]?.['personal-brain'];
+    if (!e || !(e.args ?? []).some((a) => norm(a) === `${norm(DIR)}/mcp.mjs`)) continue;
+    delete cfg[key]['personal-brain'];
+    if (!DRY) { cpSync(file, `${file}.${Date.now()}.bak`); writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n'); }
+    info(`đã gỡ MCP server personal-brain khỏi ${file}`);
   }
 }
 
