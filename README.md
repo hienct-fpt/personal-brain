@@ -149,7 +149,8 @@ The installer registers the MCP server `personal-brain` (user scope, read-only),
 
 | Tool | For questions like | Returns |
 | --- | --- | --- |
-| `brain_search(query, project?, kinds?, since?, until?, days?, limit?)` | "how did I fix the CSRF bug last time?", "what did I decide about X in October?" | best-matching prompts / sessions / knowledge / AI summaries / installed skills·agents·commands, with excerpt and date. Ranked by relevance with a boost for recent items; `since`/`until` (`YYYY-MM-DD`) or `days` limit the time window |
+| `brain_search(query, project?, kinds?, since?, until?, days?, limit?, context?)` | "how did I fix the CSRF bug last time?", "what did I decide about X in October?" | best-matching prompts / sessions / knowledge / AI summaries / installed skills·agents·commands, with excerpt and date. Ranked by relevance with a boost for recent items; `since`/`until` (`YYYY-MM-DD`) or `days` limit the time window. Without them, a time cue written in the query ("tuần trước", "tháng 9", "3 ngày qua", "last month", "2026-10"…) is detected and applied. The first 5 prompt hits come with the prompt just before/after in the same session |
+| `brain_related(entity, project?, limit?)` | "what usually changes together with `query.mjs`?", "where did I work on ticket ABC-123?" | files, tickets, skills/agents/commands and `identifiers` that co-occur with the entity in the same sessions/memories (weighted, common ones damped), plus the sessions that mention it |
 | `brain_project(name?)` | "where is project X at, what did we decide?" | AI summary, knowledge (tagged with its memory type), recent sessions, most-edited files, latest prompts. Empty `name` = current project |
 | `brain_recent(days?, project?)` | "what did I work on this week?" | sessions grouped by day, with prompt count and cost |
 | `brain_profile(type?)` | "how does this user like to work?" | memories of type `user` (who you are) and `feedback` (how you want Claude to work), gathered from every project |
@@ -174,7 +175,7 @@ flowchart LR
   DB --> S["server.mjs<br/>127.0.0.1:4377"] --> UI["Dashboard"]
   S -->|"on start + periodically + ↻ button"| I
   S -->|"optional"| AI["AI summary<br/>(selected provider)"]
-  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code<br/>brain_search / brain_project / brain_recent / brain_profile"]
+  DB --> M["mcp.mjs (stdio, read-only)"] --> CC["Claude Code<br/>brain_search / brain_related / brain_project<br/>brain_recent / brain_profile"]
 ```
 
 To use AI summaries (in the dashboard's **⚙ Cài đặt** / Settings tab):

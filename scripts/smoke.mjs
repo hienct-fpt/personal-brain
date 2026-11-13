@@ -29,7 +29,21 @@ process.on('exit', stop);
 
 let fails = 0;
 const ok = (name, cond, extra = '') => { console.log(`${cond ? '✓' : '✗'} ${name}${extra ? ` — ${extra}` : ''}`); if (!cond) fails++; };
-const getJson = async (p) => { const r = await fetch(base + p); return { status: r.status, body: await r.json().catch(() => null) }; };
+let exited = null;
+srv.on('exit', (code, sig) => { exited = `${code ?? ''}${sig ? ` ${sig}` : ''}`; });
+// The server ingests synchronously on start, blocking its event loop; a keep-alive socket it closes meanwhile can
+// reset the next request that reuses it (ECONNRESET). That is a client-side race, not a server failure: retry once
+// while the server is still alive. Anything else (or a second failure) aborts with the server log.
+const getJson = async (p, retried = false) => {
+  try { const r = await fetch(base + p); return { status: r.status, body: await r.json().catch(() => null) }; }
+  catch (e) {
+    const code = e.cause?.code ?? e.message;
+    if (!retried && exited == null && code === 'ECONNRESET') { console.log(`- GET ${p} → ECONNRESET (server vẫn chạy), thử lại`); return getJson(p, true); }
+    console.error(`✗ GET ${p} → ${code}${exited != null ? ` (server đã thoát: ${exited})` : ''}
+--- log server ---
+${log.slice(-4000)}`); process.exit(1);
+  }
+};
 
 // wait for the server (first ingest of a fresh dev DB can take ~1 min, but the server listens before ingesting)
 let up = false;
@@ -122,17 +136,23 @@ ok('GET /api/profile chỉ user/feedback, không lộ path', prof.status === 200
     { id: 9, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', since: '2026-02-30' } } },
     { id: 10, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', since: '2026-05-02', until: '2026-05-01' } } },
     { id: 11, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a', days: 30, until: '2999-12-31' } } },
+    // time cue inside the query → window applied and cue removed from the keywords
+    { id: 12, method: 'tools/call', params: { name: 'brain_search', arguments: { query: 'a tháng 1/2999' } } },
+    { id: 13, method: 'tools/call', params: { name: 'brain_related', arguments: { entity: 'README.md' } } },
+    { id: 14, method: 'tools/call', params: { name: 'brain_related', arguments: { entity: 'zzz-khong-co.xyz' } } },
   ].map((m) => JSON.stringify({ jsonrpc: '2.0', ...m })).join('\n') + '\n';
   const r = spawnSync(process.execPath, ['--no-warnings', join(root, 'src', 'mcp.mjs')], { input: reqs, encoding: 'utf8', timeout: 20000 });
   const res = new Map(r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).map((o) => [o.id, o]));
   const text = (i) => res.get(i)?.result?.content?.[0]?.text ?? '';
   ok('MCP initialize', res.get(1)?.result?.serverInfo?.name === 'personal-brain', r.stderr.trim().slice(0, 200));
-  ok('MCP tools/list = 4 tool chỉ đọc', res.get(2)?.result?.tools?.length === 4 && res.get(2).result.tools.every((t) => t.annotations?.readOnlyHint));
-  ok('MCP gọi đủ 4 tool', [3, 4, 5, 7, 11].every((i) => typeof res.get(i)?.result?.content?.[0]?.text === 'string' && !res.get(i).result.isError));
+  ok('MCP tools/list = 5 tool chỉ đọc', res.get(2)?.result?.tools?.length === 5 && res.get(2).result.tools.every((t) => t.annotations?.readOnlyHint));
+  ok('MCP gọi đủ 5 tool', [3, 4, 5, 7, 11, 13, 14].every((i) => typeof res.get(i)?.result?.content?.[0]?.text === 'string' && !res.get(i).result.isError));
   ok('MCP brain_search since tương lai → không có kết quả', text(8).startsWith('Không tìm thấy') && text(8).includes('2999-01-01'), text(8).slice(0, 120));
   ok('MCP brain_search ngày sai / since > until → isError', res.get(9)?.result?.isError && res.get(10)?.result?.isError, `${text(9)} | ${text(10)}`);
+  ok('MCP brain_search tự hiểu "tháng 1/2999"', text(12).includes('2999-01-01 → 2999-01-31') && text(12).includes('Không tìm thấy gì cho "a"'), text(12).slice(0, 160));
+  ok('MCP brain_related trả kết quả / báo không thấy', text(13).length > 0 && text(14).startsWith('Không thấy'), `${text(13).slice(0, 80)} | ${text(14).slice(0, 80)}`);
   ok('MCP method lạ → -32601', res.get(6)?.error?.code === -32601);
-  ok('MCP stdout chỉ có JSON-RPC', res.size === 11);
+  ok('MCP stdout chỉ có JSON-RPC', res.size === 14);
 }
 
 const settings = await getJson('/api/settings');

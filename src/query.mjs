@@ -1,5 +1,6 @@
 // Read-side queries shared by the dashboard server and the MCP server: full-text search (FTS5), project brief, recent work.
 import { localDay, PROFILE_TYPES } from './lib.mjs';
+import { rebuildEntities } from './entities.mjs';
 
 // unicode61 + remove_diacritics folds "quyết" → "quyet" but treats "đ" as its own letter; fold it ourselves (1:1 chars).
 export const fold = (s) => String(s ?? '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
@@ -21,11 +22,67 @@ export function rebuildSearchIndex(db) {
   for (const e of db.prepare('SELECT path, kind, name, scope, project, description, outline, mtime FROM extensions').all())
     add('extension', e.path, e.project ?? `(${e.scope})`, e.mtime, `${e.kind} ${e.name}`, `${e.description}
 ${e.outline}`);
+  rebuildEntities(db);
 }
 
 // DB from before the index existed (or never ingested since): build it once.
 export function ensureSearchIndex(db) {
-  if (!db.prepare('SELECT 1 FROM search_fts LIMIT 1').get() && db.prepare('SELECT 1 FROM sessions LIMIT 1').get()) rebuildSearchIndex(db);
+  if (!db.prepare('SELECT 1 FROM sessions LIMIT 1').get()) return;
+  if (!db.prepare('SELECT 1 FROM search_fts LIMIT 1').get()) rebuildSearchIndex(db);
+  else if (!db.prepare('SELECT 1 FROM entities LIMIT 1').get()) rebuildEntities(db); // DB from before the entity graph
+}
+
+// Prompts typed just before / after a prompt in the same session — the "local span" around a hit (Zero-Mem idea):
+// a prompt alone is often "ok làm đi"; its neighbours say what it was about.
+export function promptNeighbors(db, sessionId, ts, n = 1) {
+  return {
+    before: db.prepare('SELECT ts, text FROM prompts WHERE session_id = ? AND ts < ? ORDER BY ts DESC LIMIT ?').all(sessionId, ts, n).reverse(),
+    after: db.prepare('SELECT ts, text FROM prompts WHERE session_id = ? AND ts > ? ORDER BY ts LIMIT ?').all(sessionId, ts, n),
+  };
+}
+
+// Rule-based time cue in a free-text query (Vietnamese/English): "tuần trước", "tháng 9", "3 ngày qua", "last month",
+// "2026-10", "hôm qua"… → { since, until, label, rest } where rest = the query with the cue removed (accents folded,
+// which FTS ignores anyway). null when there is no cue. First cue wins.
+const MONTHS_EN = ['january', 'february', 'march', 'april', null, 'june', 'july', 'august', 'september', 'october', 'november', 'december']; // "may" = Vietnamese "máy"
+const PRE = String.raw`(?:(?:vao|trong|tu|in|during|from|since)\s+)?`;
+export function timeHint(q, now = new Date()) {
+  const n = fold(q).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const day = (y, m, d) => new Date(y, m, d);
+  const endOf = (d) => d.getTime() - 1;
+  const Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
+  const today = day(Y, M, D);
+  const monday = day(Y, M, D - ((now.getDay() + 6) % 7));
+  const month = (y, m) => ({ since: day(y, m, 1).getTime(), until: endOf(day(y, m + 1, 1)) });
+  const rules = [
+    [/(\d{4})-(\d{2})-(\d{2})/, (m) => ({ since: day(+m[1], m[2] - 1, +m[3]).getTime(), until: endOf(day(+m[1], m[2] - 1, +m[3] + 1)) })],
+    [/ngay (\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?/, (m) => { const y = m[3] ? +m[3] : day(Y, m[2] - 1, +m[1]) > now ? Y - 1 : Y;
+      return { since: day(y, m[2] - 1, +m[1]).getTime(), until: endOf(day(y, m[2] - 1, +m[1] + 1)) }; }],
+    [/hom nay|today/, () => ({ since: today.getTime(), until: null })],
+    [/hom qua|yesterday/, () => ({ since: day(Y, M, D - 1).getTime(), until: endOf(today) })],
+    [/hom kia/, () => ({ since: day(Y, M, D - 2).getTime(), until: endOf(day(Y, M, D - 1)) })],
+    [/tuan nay|this week/, () => ({ since: monday.getTime(), until: null })],
+    [/tuan (?:truoc|roi)|last week/, () => ({ since: day(Y, M, monday.getDate() - 7).getTime(), until: endOf(monday) })],
+    [/thang nay|this month/, () => ({ since: day(Y, M, 1).getTime(), until: null })],
+    [/thang (?:truoc|roi)|last month/, () => month(Y, M - 1)],
+    [/nam nay|this year/, () => ({ since: day(Y, 0, 1).getTime(), until: null })],
+    [/nam (?:truoc|ngoai|roi)|last year/, () => ({ since: day(Y - 1, 0, 1).getTime(), until: endOf(day(Y, 0, 1)) })],
+    [/(\d{1,3}) (ngay|tuan|thang) (?:qua|gan day|gan nhat|vua qua)/, (m) => ({ since: now - m[1] * { ngay: 1, tuan: 7, thang: 30 }[m[2]] * 864e5, until: null })],
+    [/(?:last|past) (\d{1,3}) (day|week|month)s?/, (m) => ({ since: now - m[1] * { day: 1, week: 7, month: 30 }[m[2]] * 864e5, until: null })],
+    [/thang (\d{1,2})(?:(?:[/-]| nam )(\d{4}))?/, (m) => { const mo = m[1] - 1; if (mo < 0 || mo > 11) return null;
+      return month(m[2] ? +m[2] : mo > M ? Y - 1 : Y, mo); }],
+    [new RegExp(`(${MONTHS_EN.filter(Boolean).join('|')})(?: (\d{4}))?`), (m) => { const mo = MONTHS_EN.indexOf(m[1]);
+      return month(m[2] ? +m[2] : mo > M ? Y - 1 : Y, mo); }],
+    [/(\d{4})-(\d{2})(?!\d)/, (m) => (m[2] >= 1 && m[2] <= 12 ? month(+m[1], m[2] - 1) : null)],
+    [/(?:nam|year|in) (20\d{2})/, (m) => ({ since: day(+m[1], 0, 1).getTime(), until: endOf(day(+m[1] + 1, 0, 1)) })],
+  ];
+  for (const [re, f] of rules) {
+    const m = new RegExp(String.raw`(?<![\p{L}\p{N}])${PRE}(?:${re.source})(?![\p{L}\p{N}])`, 'u').exec(n);
+    const w = m && f(m);
+    if (!w) continue;
+    return { ...w, label: m[0].trim(), rest: (n.slice(0, m.index) + ' ' + n.slice(m.index + m[0].length)).replace(/\s+/g, ' ').trim() };
+  }
+  return null;
 }
 
 function summaryText(json) {

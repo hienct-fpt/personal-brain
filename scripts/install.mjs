@@ -132,7 +132,7 @@ if (!flag('--no-mcp')) {
   else {
     claude('mcp', 'remove', 'personal-brain', '--scope', 'user'); // re-register: the install dir may have changed
     const r = claude('mcp', 'add', '--scope', 'user', 'personal-brain', '--', 'node', '--no-warnings', WIN ? `"${mcpPath}"` : mcpPath);
-    info(r.status === 0 ? `đã đăng ký → node ${mcpPath} (tool: brain_search, brain_project, brain_recent, brain_profile)` : `⚠ đăng ký lỗi: ${(r.stderr || r.stdout).trim()}`);
+    info(r.status === 0 ? `đã đăng ký → node ${mcpPath} (tool: brain_search, brain_related, brain_project, brain_recent, brain_profile)` : `⚠ đăng ký lỗi: ${(r.stderr || r.stdout).trim()}`);
   }
 }
 

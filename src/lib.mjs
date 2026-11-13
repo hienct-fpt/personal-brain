@@ -82,6 +82,13 @@ CREATE INDEX IF NOT EXISTS ix_ext_usage_name ON ext_usage(kind, name);
 CREATE TABLE IF NOT EXISTS summaries (
   project TEXT PRIMARY KEY, generated_at INTEGER, model TEXT, content TEXT);
 
+-- derived entity graph: regex-extracted files / tickets / code identifiers / skills·agents·commands per unit
+-- (unit = session id or memory-file path); rebuilt together with search_fts (entities.mjs rebuildEntities)
+CREATE TABLE IF NOT EXISTS entities (
+  unit TEXT, unit_kind TEXT, project TEXT, ts INTEGER, kind TEXT, key TEXT, name TEXT, n INTEGER);
+CREATE INDEX IF NOT EXISTS ix_entities_key ON entities(key);
+CREATE INDEX IF NOT EXISTS ix_entities_unit ON entities(unit);
+
 -- derived full-text index over sessions/prompts/knowledge/summaries (rebuilt by query.mjs rebuildSearchIndex)
 CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
   kind UNINDEXED, ref UNINDEXED, project UNINDEXED, ts UNINDEXED, title UNINDEXED, raw UNINDEXED, text,

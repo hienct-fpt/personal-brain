@@ -5,7 +5,8 @@ import { createInterface } from 'node:readline';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb, loadConfig, projectOf, localDay, HOME } from './lib.mjs';
-import { search, ensureSearchIndex, resolveProject, projectBrief, recent, profile } from './query.mjs';
+import { search, ensureSearchIndex, resolveProject, projectBrief, recent, profile, promptNeighbors, timeHint } from './query.mjs';
+import { related } from './entities.mjs';
 
 const cfg = loadConfig();
 const db = openDb();
@@ -35,7 +36,9 @@ const TOOLS = [
     description: 'Tìm trong lịch sử làm việc với Claude Code của người dùng (tiêu đề session, prompt đã gõ, knowledge/memory, tóm tắt AI theo project, skill/agent/slash command đã cài). '
       + 'Dùng khi người dùng hỏi "lần trước…", "tôi đã từng…", "đã quyết định gì về…", hoặc khi cần ngữ cảnh từ các session trước. '
       + 'Không phân biệt dấu tiếng Việt, khớp đầu từ, xếp theo độ liên quan (ưu tiên kết quả gần đây). '
-      + 'Câu hỏi có mốc thời gian ("tuần trước", "tháng 10") thì đặt since/until hoặc days.',
+      + 'Câu hỏi có mốc thời gian ("tuần trước", "tháng 10") thì đặt since/until hoặc days; nếu không đặt, mốc thời gian viết trong query '
+      + '(hôm qua, tuần trước, tháng 9, 3 ngày qua, last month, 2026-10…) được tự hiểu và bỏ khỏi từ khoá. '
+      + 'Kết quả loại prompt kèm prompt ngay trước/sau trong cùng session để rõ ngữ cảnh.',
     inputSchema: { type: 'object', properties: {
       query: { type: 'string', description: 'Từ khoá (tiếng Việt có/không dấu hoặc tiếng Anh)' },
       project: { type: 'string', description: 'Chỉ tìm trong project này (tuỳ chọn)' },
@@ -44,7 +47,19 @@ const TOOLS = [
       until: { type: 'string', description: 'Đến ngày (YYYY-MM-DD, tính cả ngày đó) — tuỳ chọn' },
       days: { type: 'integer', minimum: 1, maximum: 3650, description: 'Chỉ N ngày gần nhất (dùng khi không có since) — tuỳ chọn' },
       limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Số kết quả tối đa (mặc định 15)' },
+      context: { type: 'boolean', description: 'Kèm prompt trước/sau cho 5 kết quả prompt đầu (mặc định true)' },
     }, required: ['query'] },
+  },
+  {
+    name: 'brain_related',
+    description: 'Những gì hay đi cùng một file / ticket (ABC-123, #123) / skill·agent·slash command / tên hàm trong lịch sử làm việc: '
+      + 'file, ticket, skill, identifier xuất hiện chung session/memory, kèm các session có nhắc tới nó. '
+      + 'Dùng khi hỏi "X liên quan tới gì", "sửa X thì thường đụng file nào", "ticket này đã làm ở session nào".',
+    inputSchema: { type: 'object', properties: {
+      entity: { type: 'string', description: 'Tên file (vd. query.mjs), mã ticket, tên skill/command, hoặc identifier' },
+      project: { type: 'string', description: 'Chỉ trong project này (tuỳ chọn)' },
+      limit: { type: 'integer', minimum: 1, maximum: 20, description: 'Số mục tối đa mỗi loại (mặc định 8)' },
+    }, required: ['entity'] },
   },
   {
     name: 'brain_profile',
@@ -70,19 +85,58 @@ const TOOLS = [
   },
 ].map((t) => ({ ...t, annotations: { readOnlyHint: true, openWorldHint: false } }));
 
-function brainSearch({ query, project, kinds, since, until, days, limit = 15 }) {
+function brainSearch({ query, project, kinds, since, until, days, limit = 15, context = true }) {
   if (!String(query ?? '').trim()) throw new Error('Thiếu query');
   const proj = project ? resolveProject(db, project).name ?? project : null;
-  const from = since ? parseDay(since) : Number(days) > 0 ? Date.now() - Math.min(Number(days), 3650) * 864e5 : null;
-  const to = until ? parseDay(until, true) : null;
+  let from = since ? parseDay(since) : Number(days) > 0 ? Date.now() - Math.min(Number(days), 3650) * 864e5 : null;
+  let to = until ? parseDay(until, true) : null;
   if (from != null && to != null && from > to) throw new Error('since phải trước until');
-  const hits = search(db, query, { project: proj, kinds, since: from, until: to, limit: Math.min(Number(limit) || 15, 50) });
+  // no explicit window → read a time cue out of the query itself ("tuần trước", "tháng 9"…)
+  const hint = from == null && to == null ? timeHint(query) : null;
+  let q = query;
+  if (hint) {
+    if (!/[\p{L}\p{N}]/u.test(hint.rest)) return `Câu hỏi chỉ có mốc thời gian ("${hint.label}") — dùng brain_recent, hoặc thêm từ khoá.`;
+    ({ since: from, until: to } = hint); q = hint.rest;
+  }
+  const hits = search(db, q, { project: proj, kinds, since: from, until: to, limit: Math.min(Number(limit) || 15, 50) });
   const window = from != null || to != null ? ` (${from != null ? localDay(from) : '…'} → ${to != null ? localDay(to) : 'nay'})` : '';
-  if (!hits.length) return `Không tìm thấy gì cho "${query}"${proj ? ` trong ${proj}` : ''}${window}.`;
+  const note = hint ? `(Hiểu "${hint.label}" là${window}; tìm "${q}". Truyền since/until để đổi.)\n` : '';
+  if (!hits.length) return `${note}Không tìm thấy gì cho "${q}"${proj ? ` trong ${proj}` : ''}${window}.`;
   const typeOf = db.prepare('SELECT type FROM knowledge WHERE path = ?');
-  return hits.map((h) => `- [${KIND[h.kind]}${h.kind === 'knowledge' ? typeTag(typeOf.get(h.ref)?.type) : ''}] ${h.project} · ${h.ts ? localDay(h.ts) : '?'}`
-    + `${h.title && h.kind !== 'summary' ? ` · ${clip(h.title, 100)}` : ''}`
-    + (h.kind === 'session' ? '' : `\n  ${clip(h.snippet, 400)}`)).join('\n');
+  let withCtx = context === false ? 0 : 5;
+  return note + hits.map((h) => {
+    let s = `- [${KIND[h.kind]}${h.kind === 'knowledge' ? typeTag(typeOf.get(h.ref)?.type) : ''}] ${h.project} · ${h.ts ? localDay(h.ts) : '?'}`
+      + `${h.title && h.kind !== 'summary' ? ` · ${clip(h.title, 100)}` : ''}`
+      + (h.kind === 'session' ? '' : `\n  ${clip(h.snippet, 400)}`);
+    if (h.kind === 'prompt' && withCtx-- > 0) {
+      const nb = promptNeighbors(db, h.ref, h.ts);
+      for (const p of nb.before) s += `\n    ↑ trước: ${clip(p.text, 160)}`;
+      for (const p of nb.after) s += `\n    ↓ sau: ${clip(p.text, 160)}`;
+    }
+    return s;
+  }).join('\n');
+}
+
+const EKIND = { file: 'File', ticket: 'Ticket', code: 'Identifier', skill: 'Skill', agent: 'Agent', command: 'Slash command' };
+function brainRelated({ entity, project, limit = 8 }) {
+  if (!String(entity ?? '').trim()) throw new Error('Thiếu entity');
+  const proj = project ? resolveProject(db, project).name ?? project : null;
+  const r = related(db, entity, { project: proj, limit: Math.min(Number(limit) || 8, 20) });
+  if (r.candidates) return `"${entity}" khớp nhiều mục — gọi lại với tên cụ thể:\n`
+    + r.candidates.map((c) => `- ${EKIND[c.kind] ?? c.kind}: ${c.name} (${c.units} lần)`).join('\n');
+  if (!r.matched.length) return `Không thấy "${entity}"${proj ? ` trong ${proj}` : ''} trong lịch sử (chỉ nhận file, ticket, skill/agent/command, \`identifier\`). Thử brain_search.`;
+  const out = [`# ${r.matched.map((m) => `${EKIND[m.kind] ?? m.kind} ${m.name}`).join(', ')} — ${r.units.length} session/memory`];
+  out.push(`Project: ${r.projects.map(([p, n]) => `${p} (${n})`).join(', ')}`);
+  for (const k of Object.keys(EKIND)) {
+    const xs = r.related.filter((x) => x.kind === k);
+    if (xs.length) out.push(`\n## ${EKIND[k]} hay đi cùng`, ...xs.map((x) => `- ${x.name} (${x.units} lần cùng)`));
+  }
+  const title = db.prepare('SELECT title FROM sessions WHERE id = ?');
+  const kname = db.prepare('SELECT name FROM knowledge WHERE path = ?');
+  out.push('\n## Nhắc tới ở', ...r.units.slice(0, 10).map((u) => `- ${u.ts ? localDay(u.ts) : '?'} · ${u.project} · `
+    + (u.unit_kind === 'session' ? clip(title.get(u.unit)?.title ?? '(không tiêu đề)', 100) : `memory: ${kname.get(u.unit)?.name ?? '?'}`)));
+  if (r.units.length > 10) out.push(`- … và ${r.units.length - 10} nơi khác`);
+  return out.join('\n');
 }
 
 function brainProfile({ type } = {}) {
@@ -131,7 +185,7 @@ function brainRecent({ days = 7, project } = {}) {
   return [...byDay].map(([d, ss]) => `## ${d}\n` + ss.map((s) => `- ${s.project} · ${clip(s.title, 100)} (${s.n_prompts} prompt, ${money(s.cost_usd)})`).join('\n')).join('\n\n');
 }
 
-const HANDLERS = { brain_search: brainSearch, brain_project: brainProject, brain_recent: brainRecent, brain_profile: brainProfile };
+const HANDLERS = { brain_search: brainSearch, brain_related: brainRelated, brain_project: brainProject, brain_recent: brainRecent, brain_profile: brainProfile };
 
 function handle(msg) {
   const { method, params } = msg;

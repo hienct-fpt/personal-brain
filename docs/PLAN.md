@@ -45,11 +45,11 @@ flowchart LR
   S -->|"only with an API key"| SM["summarize.mjs"]
   SM --> P["providers.mjs<br/>Claude / OpenAI / Gemini / Azure / OpenAI-compatible"]
   SM -->|"store result"| DB
-  DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_project / brain_recent / brain_profile"]
+  DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_related / brain_project<br/>brain_recent / brain_profile"]
   M --> CC["Claude Code (any project)"]
 ```
 
-After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt from `sessions`, `prompts`, `knowledge`, `summaries` and `extensions` (name + description + outline only). At ~1,200 rows this takes about 0.4 s.
+After every ingest or summary, the `search_fts` (FTS5) index is fully rebuilt from `sessions`, `prompts`, `knowledge`, `summaries` and `extensions` (name + description + outline only). At ~1,200 rows this takes about 0.4 s. The `entities` table is rebuilt in the same pass (~1 s on ~100 sessions).
 
 ### 4.2 Incremental ingest
 
@@ -122,9 +122,11 @@ sequenceDiagram
   participant M as mcp.mjs (stdio)
   participant DB as brain.db
   CC->>M: initialize, tools/list
-  M-->>CC: 4 read-only tools + instructions
+  M-->>CC: 5 read-only tools + instructions
   CC->>M: tools/call brain_search {query, since?, until?}
+  M->>M: no since/until → timeHint(query): "tuần trước" → window, cue removed
   M->>DB: search_fts MATCH (bm25 × recency boost, optional time window)
+  M->>DB: prompt hits → neighbouring prompts of the same session
   M-->>CC: text: hits with project, date, excerpt
 ```
 
@@ -169,6 +171,7 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 | `extensions` | skills (`skills/<n>/SKILL.md`), subagents (`agents/**/*.md`), slash commands (`commands/**/*.md`): scope (`user`/`synced`/`plugin`/`project`), description, heading outline, model/tools, body (redacted, ≤ 6,000 chars); rebuilt every ingest | `~/.claude/`, `~/.claude/skills/synced/*/`, installed plugins, `<project>/.claude/` (workspace tree, depth 4) |
 | `ext_usage` | one row per `Skill` call, `Agent`/`Task` launch (by `subagent_type`) and `/command` typed | transcript |
 | `ingest_state` | mtime/size signature per session for incremental ingest; `PRAGMA user_version` < `INGEST_VERSION` forces one full re-ingest when new fields are extracted | — |
+| `entities` | entity graph: one row per (unit, entity) — unit = session or memory file; entity = file name, ticket (`ABC-123`, `#123`), `` `identifier` `` from prompts (regex, no NER/LLM), edited files, used skills/agents/commands; `n` = occurrences (capped at 5). Derived, rebuilt with `search_fts` | the tables above |
 | `search_fts` | FTS5 index (unicode61, diacritics removed, `đ`→`d` folded by us); derived data, can be rebuilt any time | the tables above |
 
 **Cost:**
@@ -225,6 +228,11 @@ The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the ta
 
 **Search:** FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive, prefix matching. If no result matches every word, falls back to matching any word. Ranking = bm25 × recency boost: up to 1.5× for an item from today, the boost halving every 60 days (`RECENCY_*` in `src/query.mjs`; items without a timestamp get none). `search()` takes an optional `since`/`until` window; the MCP `brain_search` exposes it as `since`/`until` (`YYYY-MM-DD`, local day, inclusive) or `days` — time-scoped retrieval is one of the hardest abilities in LongMemEval (ICLR 2025).
 
+**Zero-token memory ideas (from Zero-Mem, arXiv 2607.29377)** — all deterministic, no LLM call:
+- *Time cue in the query:* `timeHint()` (`src/query.mjs`) maps phrases like "hôm qua", "tuần trước", "tháng 9", "3 ngày qua", "last month", "2026-10", "ngày 5/10" to a window and strips them from the keywords. Used by `brain_search` only when no explicit `since`/`until`/`days` is given; the tool output states how the cue was read.
+- *Local span:* prompt hits carry the previous/next prompt of the same session (`promptNeighbors()`), because a prompt alone is often "ok làm đi".
+- *Entity graph:* `brain_related` (`src/entities.mjs`) scores entities co-occurring with the query entity as Σ over shared units of n(e,u)/Σn(u) × ln(1 + N/df(e)) — the share of each unit (Zero-Mem Eq. 4) damped by idf. One hop only; no PageRank, no embeddings (no extra dependency).
+
 ## 8. AI summaries
 
 - **Condition:** only enabled when the selected provider has an API key and a model. Otherwise the button is disabled and the server returns 403.
@@ -276,7 +284,7 @@ Installed in `~/.claude/settings.json` (2026-11-09):
 | 3. Dashboard | Projects (portfolio + detail), AI usage, 💡 tips, search | ✅ |
 | 4. AI summaries | 5 providers (Claude, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible), gated by API key, ⚙ Settings | ✅ code done — **not yet tried with a real key** |
 | 5. Hook & retention | SessionEnd + `cleanupPeriodDays` 365 | ✅ installed — confirmed via `ingest-hook.log` after the next session |
-| 6. Brain for Claude | read-only MCP server (`brain_search`, `brain_project`, `brain_recent`, `brain_profile`) + FTS5 search; memory types + person-level profile; time-window search with recency ranking | ✅ smoke-tested over stdio, registered and connected — not yet tried inside a real Claude Code session |
+| 6. Brain for Claude | read-only MCP server (`brain_search`, `brain_related`, `brain_project`, `brain_recent`, `brain_profile`) + FTS5 search; memory types + person-level profile; time-window search with recency ranking | ✅ smoke-tested over stdio, registered and connected — not yet tried inside a real Claude Code session |
 | 7. (Later) | "Summarize all active projects" button; SessionStart hook injecting the project summary; more sources (GitHub Copilot, git commits) | — |
 
 ## 12. Open decisions
