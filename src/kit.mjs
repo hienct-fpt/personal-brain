@@ -8,7 +8,7 @@
 //   --user         target ~/.claude instead (available in every project)
 //   --force        add: overwrite a different existing copy · remove: delete even if modified
 //   --dry-run      show what would happen, change nothing
-import { readdirSync, readFileSync, existsSync, statSync, lstatSync, realpathSync, mkdirSync, cpSync, rmSync, renameSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync, lstatSync, realpathSync, mkdirSync, cpSync, rmSync, renameSync, unlinkSync, rmdirSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname, relative, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HOME, loadConfig } from './core/lib.mjs';
@@ -75,15 +75,24 @@ export function installSkillText(name, content, { target }) {
 }
 
 // Remove one installed skill by moving its folder to <trashDir>/<name>-<timestamp>/ (restorable, nothing is deleted).
-// `file` must be <…>/skills/<name>/SKILL.md; only plain folders qualify — a symlink/junction (often a shared repo) is refused.
-// → { ok, movedTo } or { ok: false, code: 'invalid' | 'link' | 'missing', error }
+// `file` must be <…>/skills/<name>/SKILL.md. A plain folder is moved. A symlink/junction (often into a shared repo) only has
+// the LINK removed — its target is never touched — and the target is saved in LINK.txt in the trash so it can be recreated.
+// A skill reached through a linked parent folder is refused (removing it would delete from the shared repo).
+// → { ok, movedTo, link? } or { ok: false, code: 'invalid' | 'link' | 'missing', error }
 export function removeSkillFolder(file, { trashDir }) {
   const f = resolve(file), dir = dirname(f);
   if (basename(f) !== 'SKILL.md' || basename(dirname(dir)) !== 'skills') return { ok: false, code: 'invalid', error: 'Không phải thư mục skill (…/skills/<tên>/SKILL.md).' };
   if (!existsSync(f)) return { ok: false, code: 'missing', error: 'Skill không còn trên đĩa — làm mới để cập nhật danh sách.' };
-  if (lstatSync(dir).isSymbolicLink() || realpathSync(dir) !== dir) return { ok: false, code: 'link', error: `Skill này là symlink/junction (${dir}) — có thể trỏ vào repo dùng chung, hãy gỡ liên kết thủ công.` };
+  const isLink = lstatSync(dir).isSymbolicLink();
+  if (!isLink && realpathSync(dir) !== dir) return { ok: false, code: 'link', error: `Thư mục cha của skill là symlink/junction (${dir}) — gỡ thủ công để không xoá nhầm repo dùng chung.` };
   const dest = join(trashDir, `${basename(dir)}-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`);
   mkdirSync(trashDir, { recursive: true });
+  if (isLink) {
+    mkdirSync(dest, { recursive: true });
+    writeFileSync(join(dest, 'LINK.txt'), `link: ${dir}\ntarget: ${realpathSync(dir)}\n`);
+    try { unlinkSync(dir); } catch { rmdirSync(dir); } // Windows junction: rmdir removes the link, not the target's contents
+    return { ok: true, movedTo: dest, link: true };
+  }
   try { renameSync(dir, dest); } catch { cpSync(dir, dest, { recursive: true }); rmSync(dir, { recursive: true, force: true }); } // other drive
   return { ok: true, movedTo: dest };
 }

@@ -163,7 +163,8 @@ ok('GET /api/skills', skApi.status === 200 && Array.isArray(skApi.body?.skills) 
   let linked = true; try { symlinkSync(join(tmp, '.claude', 'skills', 'real-target'), linkName, 'junction'); } catch { linked = false; }
   if (linked) {
     const rl = removeSkillFolder(join(linkName, 'SKILL.md'), { trashDir: trash });
-    ok('removeSkillFolder từ chối symlink/junction, không đụng thư mục đích', rl.code === 'link' && existsSync(real));
+    ok('removeSkillFolder gỡ symlink/junction: bỏ liên kết, thư mục đích còn nguyên, ghi LINK.txt', rl.ok && rl.link && !existsSync(linkName) && existsSync(real)
+      && readFileSync(join(rl.movedTo, 'LINK.txt'), 'utf8').includes('real-target'));
   } else console.log('- bỏ qua test symlink (không tạo được junction)');
   ok('POST /api/skill-remove path ngoài danh sách → 404', (await postJson('/api/skill-remove', { path: real })).status === 404);
   ok('POST /api/skill-remove thiếu x-brain → 403', (await postJson('/api/skill-remove', { path: real }, {})).status === 403);

@@ -1,6 +1,6 @@
 # Personal Brain — implementation plan (self-built version)
 
-> Created: 2026-11-09 · Status: **v0.8.1 — v1 working + 💡 optimization tips + background mode (`brain start`) + MCP server for Claude Code + FTS5 search + GitHub Copilot (CLI + VS Code Chat)** (local dashboard reading Claude Code and Copilot history)
+> Created: 2026-11-09 · Status: **v0.9.0 — v1 working + 🩺 skill health (dead skills, context cost, lint, new-skill candidates, AI-drafted skills, restorable removal) + 💡 optimization tips + background mode (`brain start`) + MCP server for Claude Code + FTS5 search + GitHub Copilot (CLI + VS Code Chat)** (local dashboard reading Claude Code and Copilot history)
 
 ## 1. Goals
 
@@ -238,7 +238,7 @@ The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the ta
   - Per installed skill: verdict `dead` (used before, not in the window) / `unused` (never used) / `fix` (lint issues) / `ok`; calls; context cost = `(name + description) / 4` tokens × sessions that can see it (project-scoped skills count only their project's sessions; `disable-model-invocation: true` = 0). "Wasted" = context cost of dead/unused skills.
   - Lint: no / too short (< 40) / too long (> 600 chars) description, description without a "use when…" trigger, SKILL.md > 20 KB, near-identical descriptions between two skills (Jaccard ≥ 0.5).
   - Candidates: prompts typed ≥ 3 times, clustered by word overlap (Jaccard ≥ 0.6); a candidate with ≥ 3 keywords that appear in an installed skill's name+description is flagged "already covered" (the skill probably under-triggers) and gets no draft button.
-  - "Gỡ" (`POST /api/skill-remove {path}`): moves the skill folder to `<app>/removed-skills/<name>-<timestamp>/` (restore = copy it back; nothing is deleted). Only paths present in the `extensions` inventory, scope `user`/`project` (plugin and claude.ai-synced skills are refused), and only plain folders `…/skills/<name>/SKILL.md` — a symlink/junction (often a shared repo) is refused so its target is never touched. The installer ignores `removed-skills/`.
+  - "Gỡ" (`POST /api/skill-remove {path}`): moves the skill folder to `<app>/removed-skills/<name>-<timestamp>/` (restore = copy it back; nothing is deleted). Only paths present in the `extensions` inventory, scope `user`/`project` (plugin and claude.ai-synced skills are refused), and only `…/skills/<name>/SKILL.md`. A plain folder is moved; a symlink/junction (often a shared repo) only has the link removed (`unlink`/`rmdir`, target untouched) and `LINK.txt` (link + target) is saved in the trash to recreate it; a skill reached through a linked *parent* folder is refused. The installer ignores `removed-skills/`.
   - "Soạn skill": `POST /api/skill-draft` (active AI provider writes a `SKILL.md` from ≤ 8 redacted example prompts; nothing saved) → editable dialog → `POST /api/skill-install` writes `<dir>/.claude/skills/<name>/SKILL.md` (or `~/.claude` with `user`). This is the only place the browser writes outside the app dir: trusted POST only, absolute existing `dir`, name `[a-z0-9-]`, frontmatter must match, never overwrites (409).
 
 **"⚙ Cài đặt" (Settings):** register/verify/delete API keys; choose model, effort, summary language.
