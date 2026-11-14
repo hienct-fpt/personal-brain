@@ -1,6 +1,6 @@
 # Personal Brain — implementation plan (self-built version)
 
-> Created: 2026-11-09 · Status: **v0.8.0 — v1 working + 💡 optimization tips + background mode (`brain start`) + MCP server for Claude Code + FTS5 search + GitHub Copilot (CLI + VS Code Chat)** (local dashboard reading Claude Code and Copilot history)
+> Created: 2026-11-09 · Status: **v0.8.1 — v1 working + 💡 optimization tips + background mode (`brain start`) + MCP server for Claude Code + FTS5 search + GitHub Copilot (CLI + VS Code Chat)** (local dashboard reading Claude Code and Copilot history)
 
 ## 1. Goals
 
