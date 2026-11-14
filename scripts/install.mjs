@@ -128,12 +128,15 @@ if (!flag('--no-mcp')) {
   step('MCP server personal-brain (claude mcp, scope user)');
   const mcpPath = fwd(join(DIR, 'mcp.mjs'));
   const claude = (...a) => spawnSync('claude', a, { encoding: 'utf8', shell: WIN, timeout: 60000 });
-  if (claude('--version').status !== 0) info(`Không tìm thấy lệnh \`claude\` — bỏ qua. Đăng ký tay: claude mcp add --scope user personal-brain -- node --no-warnings "${mcpPath}"`);
-  else if (DRY) info(`sẽ đăng ký → node ${mcpPath}`);
+  // Absolute node path: GUI apps (Claude Desktop, VS Code) often don't have `node` on PATH.
+  const nodeBin = process.execPath;
+  const q = (p) => (WIN ? `"${p}"` : p); // through cmd.exe: quote paths with spaces
+  if (claude('--version').status !== 0) info(`Không tìm thấy lệnh \`claude\` — bỏ qua. Đăng ký tay: claude mcp add --scope user personal-brain -- ${q(nodeBin)} --no-warnings "${mcpPath}"`);
+  else if (DRY) info(`sẽ đăng ký → ${nodeBin} ${mcpPath}`);
   else {
     claude('mcp', 'remove', 'personal-brain', '--scope', 'user'); // re-register: the install dir may have changed
-    const r = claude('mcp', 'add', '--scope', 'user', 'personal-brain', '--', 'node', '--no-warnings', WIN ? `"${mcpPath}"` : mcpPath);
-    info(r.status === 0 ? `đã đăng ký → node ${mcpPath} (tool: brain_search, brain_related, brain_project, brain_recent, brain_profile)` : `⚠ đăng ký lỗi: ${(r.stderr || r.stdout).trim()}`);
+    const r = claude('mcp', 'add', '--scope', 'user', 'personal-brain', '--', q(nodeBin), '--no-warnings', q(mcpPath));
+    info(r.status === 0 ? `đã đăng ký → ${nodeBin} ${mcpPath} (tool: brain_search, brain_related, brain_project, brain_recent, brain_profile)` : `⚠ đăng ký lỗi: ${(r.stderr || r.stdout).trim()}`);
   }
 }
 
@@ -144,8 +147,8 @@ if (!flag('--no-mcp') && !flag('--no-copilot')) {
   const vsBase = WIN ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'))
     : process.platform === 'darwin' ? join(homedir(), 'Library', 'Application Support') : join(homedir(), '.config');
   const targets = [
-    { file: join(homedir(), '.copilot', 'mcp-config.json'), key: 'mcpServers', entry: { type: 'local', command: 'node', args, tools: ['*'] } },
-    ...['Code', 'Code - Insiders'].map((d) => ({ file: join(vsBase, d, 'User', 'mcp.json'), key: 'servers', entry: { type: 'stdio', command: 'node', args } })),
+    { file: join(homedir(), '.copilot', 'mcp-config.json'), key: 'mcpServers', entry: { type: 'local', command: process.execPath, args, tools: ['*'] } },
+    ...['Code', 'Code - Insiders'].map((d) => ({ file: join(vsBase, d, 'User', 'mcp.json'), key: 'servers', entry: { type: 'stdio', command: process.execPath, args } })),
   ];
   for (const t of targets) {
     if (!existsSync(dirname(t.file))) continue; // Copilot CLI / this VS Code edition is not installed
