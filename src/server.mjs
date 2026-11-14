@@ -1,14 +1,16 @@
 // Personal Brain dashboard server (zero deps). Usage: node --no-warnings server.mjs
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { join, isAbsolute } from 'node:path';
 import { openDb, loadConfig, saveConfig, localDay, HOME } from './core/lib.mjs';
 import { getApiKey, setApiKey, keyHint } from './core/secrets.mjs';
 import { PROVIDERS, ProviderError, listModels, providerReady } from './ai/providers.mjs';
 import { ingest } from './ingest/ingest.mjs';
 import { search as ftsSearch, ensureSearchIndex, extensionsOverview, profile } from './query/query.mjs';
-import { listKit } from './kit.mjs';
+import { listKit, installSkillText, removeSkillFolder, targetDir } from './kit.mjs';
+import { normPrompt, isNoisePrompt, skillHealth, skillCandidates } from './query/skills.mjs';
+import { draftSkill } from './ai/draft-skill.mjs';
 import { summarizeProject, NoApiKeyError, EFFORTS, aiConfig, activeProvider } from './ai/summarize.mjs';
 
 const cfg = loadConfig();
@@ -187,9 +189,6 @@ const TIP_RULES = {
   longPrompts: 40,         // session with ≥ 40 prompts…
   longCost: 30,            // …and ≥ $30
 };
-const normPrompt = (t) => t.toLowerCase().replace(/\s+/g, ' ').trim();
-// Long repeated texts are scripted templates (e.g. our own summary prompt), not something the user types.
-const isNoisePrompt = (t) => t.length < 6 || t.length > 300 || t.startsWith('/') || t.startsWith('<') || t.startsWith('this session is being continued');
 
 function insights(days) {
   const d = sinceDay(days), since = sinceMs(days), R = TIP_RULES;
@@ -413,6 +412,42 @@ const server = createServer(async (req, res) => {
     if (p === '/api/extension') {
       const e = get('SELECT path, kind, name, scope, project, description, outline, meta, content, mtime FROM extensions WHERE path = ?', url.searchParams.get('path') ?? '');
       return e ? send(res, 200, { ...e, meta: JSON.parse(e.meta || '{}') }) : send(res, 404, { error: 'Không tìm thấy' });
+    }
+    // Skill health (installed skills: dead / context cost / lint) + new-skill candidates (repeated prompts).
+    if (p === '/api/skills') {
+      const since = sinceMs(Number(url.searchParams.get('days') ?? 30));
+      return send(res, 200, { ...skillHealth(db, { since }), candidates: skillCandidates(db, { since }) });
+    }
+    // body: { examples: string[] } → AI-drafted SKILL.md (not saved)
+    if (p === '/api/skill-draft' && req.method === 'POST') {
+      const b = await readJson(req);
+      const examples = Array.isArray(b.examples) ? b.examples.filter((x) => typeof x === 'string' && x.trim()).slice(0, 8) : [];
+      if (!examples.length) return send(res, 400, { error: 'Thiếu prompt mẫu' });
+      if (!activeProvider().ready) return send(res, 403, { error: 'Chưa cấu hình AI provider (API key / model) — vào ⚙ Cài đặt.', code: 'no_key' });
+      try { return send(res, 200, { ok: true, ...(await draftSkill(examples)) }); }
+      catch (e) {
+        if (e instanceof NoApiKeyError) return send(res, 403, { error: e.message, code: 'no_key' });
+        if (e instanceof ProviderError) return send(res, e.status === 401 ? 401 : e.status === 429 ? 429 : 502, { error: `${PROVIDERS[activeProvider().id].label}: ${e.message}` });
+        return send(res, 502, { error: e.message });
+      }
+    }
+    // body: { name, content, dir? | user? } → writes <dir>/.claude/skills/<name>/SKILL.md (or ~/.claude/…); never overwrites
+    if (p === '/api/skill-install' && req.method === 'POST') {
+      const b = await readJson(req);
+      if (!b.user && !(typeof b.dir === 'string' && isAbsolute(b.dir) && existsSync(b.dir) && statSync(b.dir).isDirectory()))
+        return send(res, 400, { error: 'Thư mục project không tồn tại (cần đường dẫn tuyệt đối) — hoặc chọn cài cho mọi project.' });
+      const r = installSkillText(b.name, b.content, { target: targetDir({ dir: b.dir, user: !!b.user }) });
+      return send(res, r.ok ? 200 : r.code === 'exists' ? 409 : 400, r);
+    }
+    // body: { path } → moves a skill folder known from the inventory (scope user/project only) to <app>/removed-skills/
+    if (p === '/api/skill-remove' && req.method === 'POST') {
+      const b = await readJson(req);
+      const e = get("SELECT path, scope FROM extensions WHERE path = ? AND kind = 'skill'", typeof b.path === 'string' ? b.path : '');
+      if (!e) return send(res, 404, { error: 'Không tìm thấy skill này trong danh sách (làm mới rồi thử lại).' });
+      if (e.scope !== 'user' && e.scope !== 'project') return send(res, 400, { error: `Skill ${e.scope === 'plugin' ? 'của plugin — gỡ plugin để xoá nó' : 'đồng bộ từ claude.ai — gỡ trên claude.ai'}; không gỡ từ đây.` });
+      const r = removeSkillFolder(e.path, { trashDir: join(HOME, 'removed-skills') });
+      if (r.ok || r.code === 'missing') db.prepare('DELETE FROM extensions WHERE path = ?').run(e.path);
+      return send(res, r.ok ? 200 : 400, r);
     }
     if (p === '/api/search') return send(res, 200, search(url.searchParams.get('q') ?? ''));
     if (p === '/api/refresh' && req.method === 'POST') { await runIngest(); return send(res, 200, { ok: true, ...state.lastResult }); }

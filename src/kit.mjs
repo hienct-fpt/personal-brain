@@ -8,8 +8,8 @@
 //   --user         target ~/.claude instead (available in every project)
 //   --force        add: overwrite a different existing copy · remove: delete even if modified
 //   --dry-run      show what would happen, change nothing
-import { readdirSync, readFileSync, existsSync, statSync, mkdirSync, cpSync, rmSync } from 'node:fs';
-import { join, resolve, dirname, relative } from 'node:path';
+import { readdirSync, readFileSync, existsSync, statSync, lstatSync, realpathSync, mkdirSync, cpSync, rmSync, renameSync, writeFileSync } from 'node:fs';
+import { join, resolve, dirname, relative, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HOME, loadConfig } from './core/lib.mjs';
 import { parseFrontmatter } from './ingest/extensions.mjs';
@@ -58,6 +58,34 @@ function pick(names) {
     hit.length ? items.push(...hit) : unknown.push(n);
   }
   return { items, unknown };
+}
+
+// Write one new skill (full SKILL.md text) to <target>/skills/<name>/SKILL.md. Never overwrites.
+// → { ok, path } or { ok: false, code: 'invalid' | 'exists', error }
+export function installSkillText(name, content, { target }) {
+  if (!/^[a-z0-9][a-z0-9-]{1,59}$/.test(name ?? '')) return { ok: false, code: 'invalid', error: 'Tên skill chỉ gồm a-z, 0-9 và dấu gạch ngang (2-60 ký tự).' };
+  if (typeof content !== 'string' || content.length > 20000) return { ok: false, code: 'invalid', error: 'Nội dung skill trống hoặc quá dài (> 20 KB).' };
+  const { fm, body } = parseFrontmatter(content);
+  if (fm.name !== name || !fm.description || !body.trim()) return { ok: false, code: 'invalid', error: 'SKILL.md cần frontmatter có name (trùng tên skill) + description, và có nội dung.' };
+  const file = join(target, 'skills', name, 'SKILL.md');
+  if (existsSync(file)) return { ok: false, code: 'exists', error: `Đã có skill "${name}" ở ${file} — đổi tên khác.` };
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, content);
+  return { ok: true, path: file };
+}
+
+// Remove one installed skill by moving its folder to <trashDir>/<name>-<timestamp>/ (restorable, nothing is deleted).
+// `file` must be <…>/skills/<name>/SKILL.md; only plain folders qualify — a symlink/junction (often a shared repo) is refused.
+// → { ok, movedTo } or { ok: false, code: 'invalid' | 'link' | 'missing', error }
+export function removeSkillFolder(file, { trashDir }) {
+  const f = resolve(file), dir = dirname(f);
+  if (basename(f) !== 'SKILL.md' || basename(dirname(dir)) !== 'skills') return { ok: false, code: 'invalid', error: 'Không phải thư mục skill (…/skills/<tên>/SKILL.md).' };
+  if (!existsSync(f)) return { ok: false, code: 'missing', error: 'Skill không còn trên đĩa — làm mới để cập nhật danh sách.' };
+  if (lstatSync(dir).isSymbolicLink() || realpathSync(dir) !== dir) return { ok: false, code: 'link', error: `Skill này là symlink/junction (${dir}) — có thể trỏ vào repo dùng chung, hãy gỡ liên kết thủ công.` };
+  const dest = join(trashDir, `${basename(dir)}-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`);
+  mkdirSync(trashDir, { recursive: true });
+  try { renameSync(dir, dest); } catch { cpSync(dir, dest, { recursive: true }); rmSync(dir, { recursive: true, force: true }); } // other drive
+  return { ok: true, movedTo: dest };
 }
 
 // status: added | updated | same | exists (different copy, not overwritten)

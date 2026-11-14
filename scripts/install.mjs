@@ -55,7 +55,7 @@ if (DRY) info('(dry-run: không thay đổi gì)');
 step('Chép mã nguồn');
 const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : [p]; });
 const files = walk(SRC).map((p) => fwd(relative(SRC, p)))
-  .filter((f) => !RUNTIME_FILES.has(f) && !f.startsWith('runs/') && !f.endsWith('.log') && !f.startsWith('node_modules/'));
+  .filter((f) => !RUNTIME_FILES.has(f) && !f.startsWith('runs/') && !f.startsWith('removed-skills/') && !f.endsWith('.log') && !f.startsWith('node_modules/'));
 const manifestPath = join(DIR, '.installed-files.json');
 const previous = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : [];
 if (!DRY) {

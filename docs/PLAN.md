@@ -73,6 +73,8 @@ flowchart TD
   R --> Z([done])
 ```
 
+Skill loop (on demand, not part of ingest): `extensions` + `ext_usage` + `prompts` → `skillHealth` / `skillCandidates` → dashboard → "Soạn skill" → `draftSkill` (AI) → user edits → `installSkillText` → new `SKILL.md` → used in later sessions → measured again by `skillHealth`.
+
 ### 4.3 SessionEnd hook
 
 ```mermaid
@@ -147,9 +149,11 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 │  └─ extensions.mjs    # skills / agents / slash commands on disk + frontmatter/outline summary
 ├─ query/
 │  ├─ query.mjs         # shared queries: FTS5 index + search, project brief, recent sessions
-│  └─ entities.mjs      # entity extraction + co-occurrence for brain_related
+│  ├─ entities.mjs      # entity extraction + co-occurrence for brain_related
+│  └─ skills.mjs        # skill health (dead / context cost / lint) + new-skill candidates from repeated prompts
 ├─ ai/
 │  ├─ summarize.mjs     # summarize one project with the selected provider
+│  ├─ draft-skill.mjs   # draft a SKILL.md from repeated prompts with the selected provider
 │  └─ providers.mjs     # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
 ├─ server.mjs           # HTTP server + JSON API
 ├─ kit.mjs              # brain kit list|add|remove: copy the starter kit into <project>/.claude or ~/.claude
@@ -229,7 +233,13 @@ The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the ta
 - Tiles: used / on disk per kind, plus built-ins (usage with no file: `/clear`, `general-purpose`, `Explore`…).
 - Table: content summary (description + outline + model/tools), where copies live, calls, sessions, last use, top projects. Filters: kind, "used only", text. Clicking a name shows the full file.
 - The project detail page lists the skills/agents/commands used in that project and those in its `.claude/`.
-- "📦 Bộ mẫu" (starter kit) card (`GET /api/kit`): every kit item, where it is already installed, and the `brain kit add <name>` command to copy. Installing is CLI-only (the browser never writes into project folders).
+- "📦 Bộ mẫu" (starter kit) card (`GET /api/kit`): every kit item, where it is already installed, and the `brain kit add <name>` command to copy. Installing the kit is CLI-only.
+- **"🩺 Skill health" card** (`GET /api/skills?days=` → `skillHealth` + `skillCandidates` in `src/query/skills.mjs`), on top of the tab:
+  - Per installed skill: verdict `dead` (used before, not in the window) / `unused` (never used) / `fix` (lint issues) / `ok`; calls; context cost = `(name + description) / 4` tokens × sessions that can see it (project-scoped skills count only their project's sessions; `disable-model-invocation: true` = 0). "Wasted" = context cost of dead/unused skills.
+  - Lint: no / too short (< 40) / too long (> 600 chars) description, description without a "use when…" trigger, SKILL.md > 20 KB, near-identical descriptions between two skills (Jaccard ≥ 0.5).
+  - Candidates: prompts typed ≥ 3 times, clustered by word overlap (Jaccard ≥ 0.6); a candidate with ≥ 3 keywords that appear in an installed skill's name+description is flagged "already covered" (the skill probably under-triggers) and gets no draft button.
+  - "Gỡ" (`POST /api/skill-remove {path}`): moves the skill folder to `<app>/removed-skills/<name>-<timestamp>/` (restore = copy it back; nothing is deleted). Only paths present in the `extensions` inventory, scope `user`/`project` (plugin and claude.ai-synced skills are refused), and only plain folders `…/skills/<name>/SKILL.md` — a symlink/junction (often a shared repo) is refused so its target is never touched. The installer ignores `removed-skills/`.
+  - "Soạn skill": `POST /api/skill-draft` (active AI provider writes a `SKILL.md` from ≤ 8 redacted example prompts; nothing saved) → editable dialog → `POST /api/skill-install` writes `<dir>/.claude/skills/<name>/SKILL.md` (or `~/.claude` with `user`). This is the only place the browser writes outside the app dir: trusted POST only, absolute existing `dir`, name `[a-z0-9-]`, frontmatter must match, never overwrites (409).
 
 **"⚙ Cài đặt" (Settings):** register/verify/delete API keys; choose model, effort, summary language.
 

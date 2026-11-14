@@ -5,7 +5,7 @@ A local dashboard that pulls together what you have done with **Claude Code** an
 - **Projects**: what you are working on, what is done, decisions, knowledge. Includes an activity heatmap, a weekly timeline, a Kanban board and AI summaries.
 - **AI usage**: tokens, models, cost by day / project / model / hour of day; cache hit rate, tool errors, subagents.
 - **💡 Optimization tips**: warns when Opus dominates cost (with estimated savings from switching to Sonnet), heavy subagent use, many tool errors, low cache hit rate, long expensive sessions, repeated prompts; each item comes with a concrete action.
-- **🧩 Skills**: which skills, subagents and slash commands exist on your machine (user, claude.ai-synced, plugins, every project's `.claude/`) and which ones you actually use — call counts, sessions, last use, projects — each with a content summary (frontmatter description + heading outline).
+- **🧩 Skills**: which skills, subagents and slash commands exist on your machine (user, claude.ai-synced, plugins, every project's `.claude/`) and which ones you actually use — call counts, sessions, last use, projects — each with a content summary (frontmatter description + heading outline). On top, **🩺 Skill health** tells you what to do about them: skills that are never used (and the context tokens they cost every session), description lint (too vague, no "use when…", too long, near-duplicates), and **new-skill candidates** — prompts you keep retyping — with a "Soạn skill" button that has your AI provider draft a `SKILL.md` you can edit and install (never overwrites). A "Gỡ" button moves an unused skill to `removed-skills/` in the app folder (restorable; symlinked, plugin and claude.ai-synced skills are never touched).
 - **Personal knowledge for Claude**: Claude Code can search your past sessions, prompts, memory files and AI summaries from any project via MCP.
 
 Data is read straight from Claude Code transcripts (`~/.claude/projects`), Copilot CLI sessions (`~/.copilot/session-state`) and VS Code Copilot Chat history (`<VS Code user dir>/workspaceStorage/*/chatSessions`), stored in SQLite (`node:sqlite`) and **stays on your machine**.
@@ -256,6 +256,7 @@ src/
     ingest.mjs         transcripts + memory files → brain.db
     copilot.mjs        GitHub Copilot sources: Copilot CLI events.jsonl, VS Code chatSessions (.json / .jsonl mutation log)
     extensions.mjs     skills / agents / slash commands on disk
+    skills.mjs         skill health + new-skill candidates (query/); draft-skill.mjs drafts a SKILL.md (ai/)
   query/
     query.mjs          shared queries: FTS5 index + search, project brief, recent sessions
     entities.mjs       entity extraction + co-occurrence for brain_related

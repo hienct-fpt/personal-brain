@@ -5,6 +5,7 @@ src/secrets.json
 src/brain.db*
 src/*.log
 src/runs/
+src/removed-skills/
 src/version.json
 *.bak
 .DS_Store

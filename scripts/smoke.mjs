@@ -92,6 +92,86 @@ ok('GET /api/extension path lạ → 404', (await getJson('/api/extension?path=C
 const kitApi = await getJson('/api/kit');
 ok('GET /api/kit', kitApi.status === 200 && kitApi.body?.length >= 9 && kitApi.body.every((x) => x.name && x.kind && x.description && !('src' in x)), `${kitApi.body?.length ?? 0} mẫu`);
 
+// Skill health + candidates: API shape, then the logic on a synthetic in-memory DB.
+const skApi = await getJson('/api/skills?days=0');
+ok('GET /api/skills', skApi.status === 200 && Array.isArray(skApi.body?.skills) && Array.isArray(skApi.body?.candidates) && typeof skApi.body?.summary?.dead === 'number'
+  && skApi.body.skills.every((s) => s.name && ['dead', 'unused', 'fix', 'ok'].includes(s.verdict) && Array.isArray(s.issues)),
+  `${skApi.body?.skills?.length ?? 0} skill, ${skApi.body?.candidates?.length ?? 0} ứng viên`);
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const { skillHealth, skillCandidates } = await import('../src/query/skills.mjs');
+  const m = new DatabaseSync(':memory:');
+  m.exec(`CREATE TABLE extensions (path TEXT, kind TEXT, name TEXT, scope TEXT, project TEXT, description TEXT, outline TEXT, meta TEXT, content TEXT, size INTEGER, mtime INTEGER);
+    CREATE TABLE ext_usage (session_id TEXT, project TEXT, ts INTEGER, kind TEXT, name TEXT);
+    CREATE TABLE sessions (id TEXT, project TEXT, cwd TEXT, ended_at INTEGER, started_at INTEGER);
+    CREATE TABLE prompts (session_id TEXT, ts INTEGER, project TEXT, text TEXT);`);
+  const ext = m.prepare('INSERT INTO extensions VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+  const E = (name, desc, extra = {}) => ext.run(`/x/${name}/SKILL.md`, 'skill', name, extra.scope ?? 'user', null, desc, '', JSON.stringify(extra.meta ?? {}), '', extra.size ?? 500, 1);
+  E('good-skill', 'Deploy the app to staging. Use when the user asks to deploy, release or ship to staging.');
+  E('dead-skill', 'Generate changelog entries from commits. Use when the user wants a changelog or release notes.');
+  E('vague', 'helps');
+  E('twin-a', 'Review pull requests for bugs and style. Use when the user asks to review a pull request.');
+  E('twin-b', 'Review pull requests for bugs and style. Use when the user asks to review a pull request.');
+  E('huge', 'Migrate database schema safely. Use when the user wants to migrate the database.', { size: 50000 });
+  E('hidden', 'Manual only helper that is never auto invoked. Use when the user types it.', { meta: { 'disable-model-invocation': 'true' } });
+  const now = Date.now();
+  for (const n of ['good-skill', 'twin-a', 'twin-b', 'huge', 'vague', 'hidden']) m.prepare("INSERT INTO ext_usage VALUES ('s1','p',?, 'skill', ?)").run(now, n);
+  m.prepare("INSERT INTO ext_usage VALUES ('s1','p',?, 'skill', 'plug:good-skill')").run(now);
+  for (let i = 0; i < 4; i++) m.prepare('INSERT INTO sessions VALUES (?,?,?,?,?)').run(`s${i}`, 'p', null, now, now);
+  const h = skillHealth(m, { since: 0 });
+  const by = Object.fromEntries(h.skills.map((s) => [s.name, s]));
+  ok('skillHealth: skill đã dùng + prefix plugin → ok', by['good-skill'].verdict === 'ok' && by['good-skill'].uses === 2);
+  ok('skillHealth: skill chưa dùng → unused, tính token lãng phí', by['dead-skill'].verdict === 'unused' && h.summary.dead === 1 && h.summary.wastedTokens === by['dead-skill'].tokens * 4);
+  ok('skillHealth: description mơ hồ / thiếu trigger', by.vague.issues.some((i) => i.id === 'short_description') && by.vague.issues.some((i) => i.id === 'no_trigger'));
+  ok('skillHealth: trùng trigger + body quá lớn', by['twin-a'].issues.some((i) => i.id === 'overlap') && by.huge.issues.some((i) => i.id === 'big_body'));
+  ok('skillHealth: disable-model-invocation → 0 token', by.hidden.tokens === 0);
+  const P = (t, n, project = 'p') => { for (let i = 0; i < n; i++) m.prepare('INSERT INTO prompts VALUES (?,?,?,?)').run('s0', now - i, project, t); };
+  P('chạy test rồi commit và push lên nhánh hiện tại', 3);
+  P('chạy test rồi commit và push lên nhánh hiện tại nhé', 2);
+  P('deploy the app to staging please', 3);
+  P('một lần thôi', 1);
+  P('/clear', 9);
+  const c = skillCandidates(m, { since: 0 });
+  ok('skillCandidates: gom prompt gần giống, bỏ prompt hiếm và slash command', c.length === 2 && c[0].n === 5 && c[0].examples.length === 2 && !c.some((x) => x.text.startsWith('/')));
+  ok('skillCandidates: đánh dấu việc đã có skill che', c.find((x) => x.text.includes('deploy'))?.coveredBy === 'good-skill' && c.find((x) => x.text.includes('commit'))?.coveredBy === null);
+  m.close();
+}
+// Install a drafted skill into a throwaway project dir; never overwrite; reject bad input.
+{
+  const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const tmp = mkdtempSync(join(tmpdir(), 'pb-skill-'));
+  const postJson = async (p, b, headers = { 'x-brain': '1' }) => { const r = await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(b) }); return { status: r.status, body: await r.json().catch(() => null) }; };
+  const content = '---\nname: smoke-skill\ndescription: Do the smoke thing. Use when the user says smoke.\n---\n\n1. Do it.\n';
+  const i1 = await postJson('/api/skill-install', { name: 'smoke-skill', content, dir: tmp });
+  ok('POST /api/skill-install ghi SKILL.md', i1.status === 200 && existsSync(join(tmp, '.claude', 'skills', 'smoke-skill', 'SKILL.md')));
+  ok('POST /api/skill-install không ghi đè → 409', (await postJson('/api/skill-install', { name: 'smoke-skill', content, dir: tmp })).status === 409);
+  ok('POST /api/skill-install tên path-traversal → 400', (await postJson('/api/skill-install', { name: '../evil', content, dir: tmp })).status === 400);
+  ok('POST /api/skill-install frontmatter lệch tên → 400', (await postJson('/api/skill-install', { name: 'other', content, dir: tmp })).status === 400);
+  ok('POST /api/skill-install thư mục tương đối → 400', (await postJson('/api/skill-install', { name: 'smoke-skill', content, dir: 'relative/dir' })).status === 400);
+  ok('POST /api/skill-install thiếu x-brain → 403', (await postJson('/api/skill-install', { name: 'x', content, dir: tmp }, {})).status === 403);
+  ok('POST /api/skill-draft thiếu ví dụ → 400', (await postJson('/api/skill-draft', { examples: [] })).status === 400);
+  // Removing skills: the folder is moved (restorable), links/odd paths are refused. Real inventory is only probed with requests that must be refused.
+  const { mkdirSync, writeFileSync, symlinkSync, readFileSync } = await import('node:fs');
+  const { removeSkillFolder } = await import('../src/kit.mjs');
+  const trash = join(tmp, 'trash'), mk = (n) => { mkdirSync(join(tmp, '.claude', 'skills', n), { recursive: true }); writeFileSync(join(tmp, '.claude', 'skills', n, 'SKILL.md'), content); return join(tmp, '.claude', 'skills', n, 'SKILL.md'); };
+  const rm1 = removeSkillFolder(mk('to-remove'), { trashDir: trash });
+  ok('removeSkillFolder chuyển vào thùng rác, khôi phục được', rm1.ok && !existsSync(join(tmp, '.claude', 'skills', 'to-remove')) && readFileSync(join(rm1.movedTo, 'SKILL.md'), 'utf8') === content);
+  ok('removeSkillFolder từ chối đường dẫn không phải …/skills/<tên>/SKILL.md', removeSkillFolder(join(tmp, '.claude', 'skills', 'smoke-skill', 'other.md'), { trashDir: trash }).code === 'invalid'
+    && removeSkillFolder(join(tmp, 'SKILL.md'), { trashDir: trash }).code === 'invalid');
+  const real = mk('real-target'), linkName = join(tmp, '.claude', 'skills', 'linked');
+  let linked = true; try { symlinkSync(join(tmp, '.claude', 'skills', 'real-target'), linkName, 'junction'); } catch { linked = false; }
+  if (linked) {
+    const rl = removeSkillFolder(join(linkName, 'SKILL.md'), { trashDir: trash });
+    ok('removeSkillFolder từ chối symlink/junction, không đụng thư mục đích', rl.code === 'link' && existsSync(real));
+  } else console.log('- bỏ qua test symlink (không tạo được junction)');
+  ok('POST /api/skill-remove path ngoài danh sách → 404', (await postJson('/api/skill-remove', { path: real })).status === 404);
+  ok('POST /api/skill-remove thiếu x-brain → 403', (await postJson('/api/skill-remove', { path: real }, {})).status === 403);
+  const foreignCopy = skApi.body?.skills?.flatMap((s) => s.copies).find((c) => c.scope === 'plugin' || c.scope === 'synced');
+  if (foreignCopy) ok('POST /api/skill-remove skill plugin/synced → 400, file còn nguyên', (await postJson('/api/skill-remove', { path: foreignCopy.path })).status === 400 && existsSync(foreignCopy.path));
+  rmSync(tmp, { recursive: true, force: true });
+}
+
 // brain kit CLI against a throwaway project dir: add all → files exist; re-add → same; modified copy survives remove.
 {
   const { mkdtempSync, existsSync, appendFileSync, rmSync } = await import('node:fs');

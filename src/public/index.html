@@ -604,8 +604,73 @@ async function showExtension(path) {
   $('#xdlg').showModal();
 }
 const bindExtLinks = (root) => root.querySelectorAll('[data-path]').forEach((a) => a.onclick = (e) => { e.preventDefault(); showExtension(a.dataset.path).catch((err) => alert(err.message)); });
+// ----- skill health (installed skills) + new-skill candidates (repeated prompts) -----
+const VERDICT = { dead: ['💀', 'Không dùng trong kỳ', 'Gỡ nếu không còn cần — description vẫn tốn context ở mọi session'], unused: ['💤', 'Chưa từng dùng', 'Gỡ, hoặc viết lại description để Claude biết khi nào gọi'],
+  fix: ['🛠', 'Cần sửa', 'Sửa theo các vấn đề bên dưới'], ok: ['✓', 'Tốt', ''] };
+function skillHealthHtml(sk) {
+  const s = sk.summary;
+  const bad = sk.skills.filter((x) => x.verdict !== 'ok');
+  return `<div class="card"><h2>🩺 Skill health <small>skill đã cài: dùng hay chưa, tốn bao nhiêu context, mô tả có đủ tốt để kích hoạt không</small></h2>
+    <div class="tiles">
+      <div class="tile"><div class="k">Skill trên máy</div><div class="v">${s.installed}</div><div class="s">${sk.sessions} session trong kỳ</div></div>
+      <div class="tile"><div class="k">Không dùng trong kỳ</div><div class="v" style="color:${s.dead ? 'var(--warn)' : 'inherit'}">${s.dead}</div><div class="s">ứng viên để gỡ</div></div>
+      <div class="tile"><div class="k">Context mỗi session</div><div class="v">~${num(s.ctxTokensPerSession)}</div><div class="s">token name + description, nạp ở mọi session</div></div>
+      <div class="tile"><div class="k">Lãng phí do skill chết</div><div class="v">~${num(s.wastedTokens)}</div><div class="s">token trong kỳ · ${s.withIssues} skill có vấn đề</div></div>
+    </div>
+    ${bad.length ? `<table style="margin-top:10px"><tr><th>Skill</th><th>Kết luận</th><th class="n">Lượt</th><th>Gần nhất</th><th class="n" title="name + description, ~4 ký tự/token">Context/session</th><th>Vấn đề</th><th></th></tr>
+      ${bad.slice(0, 40).map((x) => { const v = VERDICT[x.verdict]; const rm = x.copies.filter((c) => c.scope === 'user' || c.scope === 'project'); return `<tr>
+        <td style="min-width:140px">${x.path ? `<a href="#" data-path="${esc(x.path)}"><b>${esc(x.name)}</b></a>` : `<b>${esc(x.name)}</b>`}<br><span class="muted">${x.scopes.map(esc).join(', ')}</span></td>
+        <td title="${esc(v[2])}">${v[0]} ${v[1]}</td><td class="n">${x.uses || '—'}</td><td>${x.last ? ago(x.last) : '<span class="muted">chưa từng</span>'}</td>
+        <td class="n">${x.hidden ? '<span class="muted">0 (tắt auto)</span>' : `~${x.tokens}`}</td>
+        <td>${x.issues.map((i) => `<div style="font-size:12px">• ${esc(i.text)}</div>`).join('') || '<span class="muted">—</span>'}</td>
+        <td>${rm.length ? `<button data-rm="${esc(x.name)}" title="Chuyển vào thùng rác của app — khôi phục được">Gỡ</button>` : '<span class="muted" style="font-size:12px" title="Skill của plugin hoặc đồng bộ từ claude.ai">không gỡ ở đây</span>'}</td></tr>`; }).join('')}</table>${bad.length > 40 ? `<div class="note">Hiện 40 / ${bad.length}.</div>` : ''}`
+      : `<div class="muted" style="margin-top:8px">${s.installed ? 'Mọi skill đều được dùng và không có vấn đề.' : 'Chưa có skill nào trên máy — xem “Bộ mẫu” bên dưới.'}</div>`}
+    <h3 style="margin-top:14px">💡 Ứng viên skill mới <small class="muted">prompt bạn gõ lặp lại ≥ 3 lần</small></h3>
+    ${sk.candidates.length ? sk.candidates.map((c, i) => `<div class="prompt" style="display:flex;gap:10px;align-items:flex-start">
+      <div style="flex:1;min-width:0">${esc(c.text)}<div class="muted" style="font-size:12px">${c.n} lần${c.projects.length > 1 ? ` · ${c.projects.length} project` : c.projects[0] ? ` · ${esc(leaf(c.projects[0]))}` : ''} · gần nhất ${ago(c.last)}${c.coveredBy ? ` · <b>đã có skill “${esc(c.coveredBy)}”</b> nhưng bạn vẫn gõ tay → xem lại description của nó` : ''}</div></div>
+      ${c.coveredBy ? '' : `<button data-draft="${i}">Soạn skill</button>`}</div>`).join('') : '<div class="muted">Chưa có prompt nào lặp lại đủ nhiều trong kỳ này.</div>'}
+  </div>`;
+}
+const draftDialogHtml = () => `<dialog id="sdlg" style="max-width:760px;width:92vw"><h3>Skill nháp <small class="muted">AI soạn từ prompt của bạn — đọc và sửa trước khi cài</small></h3>
+  <textarea id="sd-text" rows="18" style="width:100%;box-sizing:border-box;font-family:ui-monospace,Consolas,monospace;font-size:12px;${inputCss}"></textarea>
+  <div style="margin:8px 0"><label><input type="radio" name="sd-where" value="dir" checked> Chỉ project:</label>
+    <input id="sd-dir" placeholder="Đường dẫn tuyệt đối của project" style="${inputCss};width:60%">
+    <label style="margin-left:10px"><input type="radio" name="sd-where" value="user"> Mọi project (~/.claude)</label></div>
+  <div id="sd-msg" class="note"></div>
+  <form method="dialog" style="text-align:right"><button type="button" id="sd-install">Cài skill</button> <button>Đóng</button></form></dialog>`;
+function bindSkillHealth(sk) {
+  const app = $('#app');
+  bindExtLinks(app);
+  app.querySelectorAll('[data-draft]').forEach((b) => b.onclick = async () => {
+    const c = sk.candidates[Number(b.dataset.draft)];
+    b.disabled = true; const label = b.textContent; b.textContent = 'Đang soạn…';
+    try {
+      const d = await post('/api/skill-draft', { examples: c.examples });
+      $('#sd-text').value = d.content; $('#sd-dir').value = c.dir ?? ''; $('#sd-msg').textContent = '';
+      app.querySelector('input[name="sd-where"][value="' + (c.dir ? 'dir' : 'user') + '"]').checked = true;
+      $('#sdlg').showModal();
+    } catch (e) { alert(e.message); } finally { b.disabled = false; b.textContent = label; }
+  });
+  app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => {
+    const x = sk.skills.find((s) => s.name === b.dataset.rm);
+    const copies = x.copies.filter((c) => c.scope === 'user' || c.scope === 'project');
+    if (!confirm(`Gỡ skill “${x.name}”?\n\n${copies.map((c) => `• ${c.path.replace(/[\\/]SKILL\.md$/, '')}`).join('\n')}\n\nThư mục được chuyển vào removed-skills/ trong thư mục app (khôi phục bằng cách chép lại). Mở session Claude Code mới để có hiệu lực.`)) return;
+    const msgs = [];
+    for (const c of copies) { try { await post('/api/skill-remove', { path: c.path }); } catch (e) { msgs.push(e.message); } }
+    if (msgs.length) alert(msgs.join('\n'));
+    renderExtensions();
+  });
+  $('#sd-install').onclick = async () => {
+    const text = $('#sd-text').value, name = (text.match(/^name:\s*(\S+)/m) ?? [])[1];
+    const user = app.querySelector('input[name="sd-where"]:checked').value === 'user';
+    try {
+      const r = await post('/api/skill-install', { name, content: text, user, dir: $('#sd-dir').value.trim() });
+      $('#sd-msg').textContent = `✓ Đã cài: ${r.path} — mở session Claude Code mới để nạp skill.`;
+    } catch (e) { $('#sd-msg').textContent = `✗ ${e.message}`; }
+  };
+}
 async function renderExtensions() {
-  const [r, kitItems] = await Promise.all([api(`/api/extensions?days=${extState.days}`), api('/api/kit')]);
+  const [r, kitItems, sk] = await Promise.all([api(`/api/extensions?days=${extState.days}`), api('/api/kit'), api(`/api/skills?days=${extState.days}`)]);
   const stat = (k) => { const xs = r.items.filter((x) => x.kinds.includes(k)); return { have: xs.filter((x) => !x.builtin).length, used: xs.filter((x) => x.uses).length, uses: xs.reduce((a, x) => a + (x.byKind[k] ?? 0), 0) }; };
   const builtin = r.items.filter((x) => x.builtin);
   const tile = (k, label) => { const s = stat(k); return `<div class="tile"><div class="k">${label}</div><div class="v">${s.used}<span class="muted" style="font-size:14px"> / ${s.have}</span></div><div class="s">đã dùng / có trên máy · ${s.uses} lượt</div></div>`; };
@@ -613,6 +678,7 @@ async function renderExtensions() {
   <div class="filters">Khoảng thời gian:
     ${[[7, '7 ngày'], [30, '30 ngày'], [90, '90 ngày'], [0, 'Tất cả']].map(([d, l]) => `<button data-days="${d}" class="${d === extState.days ? 'on' : ''}">${l}</button>`).join('')}
   </div>
+  ${skillHealthHtml(sk)}
   <div class="tiles">
     ${tile('skill', '🧩 Skill')}${tile('agent', '🤖 Subagent')}${tile('command', '⌘ Slash command')}
     <div class="tile"><div class="k">Built-in / không có file</div><div class="v">${builtin.length}</div><div class="s">${builtin.reduce((a, x) => a + x.uses, 0)} lượt (/clear, general-purpose…)</div></div>
@@ -634,7 +700,9 @@ async function renderExtensions() {
       <td>${x.installed.length ? x.installed.map((p) => `<span class="badge">${esc(p)}</span>`).join(' ') : '<span class="muted">chưa cài</span>'}</td>
       <td><code style="white-space:nowrap">brain kit add ${esc(x.name)}</code></td></tr>`).join('')}</table>
   </div>
-  <dialog id="xdlg"><h3 id="xdlg-t"></h3><pre id="xdlg-c"></pre><form method="dialog" style="text-align:right"><button>Đóng</button></form></dialog>`;
+  <dialog id="xdlg"><h3 id="xdlg-t"></h3><pre id="xdlg-c"></pre><form method="dialog" style="text-align:right"><button>Đóng</button></form></dialog>
+  ${draftDialogHtml()}`;
+  bindSkillHealth(sk);
   const draw = () => {
     const q = extState.q.toLowerCase();
     const rows = r.items.filter((x) => (!extState.kind || x.kinds.includes(extState.kind)) && (!extState.used || x.uses)
