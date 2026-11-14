@@ -27,7 +27,7 @@ flowchart TD
 
 ## 2. Isolate by layer
 
-**Ingest / DB** (`src/ingest.mjs`, `src/lib.mjs`)
+**Ingest / DB** (`src/ingest/ingest.mjs`, `src/core/lib.mjs`)
 - Compare numbers: `npm run db -- "SELECT id, project, title, n_prompts, cost_usd, cost_source FROM sessions WHERE project = '<p>' ORDER BY started_at DESC LIMIT 20"`.
 - Missing session: is its `session_id` in `ingest_state`? Is the transcript in `~/.claude/projects/<dir>/<id>.jsonl`? Is the project wrongly grouped by `exclude` / `aliases` / `projectDepth` (`projectOf()`)?
 - Cost mismatch: `cost_source = 'estimated'` means the transcript has no `cost-state`; see `estimateMissingCosts()`.
@@ -41,12 +41,12 @@ flowchart TD
 - Open the browser console. Common causes: `null` data (project without sessions), division by zero, strings not passed through `esc()`.
 - `npm run check` catches syntax errors in the HTML script but not runtime errors.
 
-**Search / MCP** (`src/query.mjs`, `src/mcp.mjs`)
+**Search / MCP** (`src/query/query.mjs`, `src/mcp.mjs`)
 - Wrong/missing search hits: check `search_fts` row counts per `kind`; the index is rebuilt after ingest/summarize (`rebuildSearchIndex()`).
 - Test the MCP server directly: pipe JSON-RPC lines into `node --no-warnings src/mcp.mjs` (see the MCP block in `scripts/smoke.mjs`). Anything other than JSON-RPC on stdout breaks the protocol.
 - Installed registration: `claude mcp get personal-brain` (read-only check).
 
-**AI summary** (`src/summarize.mjs`, `src/providers.mjs`)
+**AI summary** (`src/ai/summarize.mjs`, `src/ai/providers.mjs`)
 - 403 `no_key` = provider has no key/model. 409 = that project is already being summarized.
 - Provider errors must be `ProviderError` with a clear message; truncated output → check token limits.
 - Never call a real API with the user's key without their consent (it costs money).

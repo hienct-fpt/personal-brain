@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 try {
   const here = dirname(fileURLToPath(import.meta.url));
   const log = openSync(join(here, 'ingest-hook.log'), 'a');
-  spawn(process.execPath, ['--no-warnings', join(here, 'ingest.mjs')], {
+  spawn(process.execPath, ['--no-warnings', join(here, 'ingest', 'ingest.mjs')], {
     cwd: here, detached: true, stdio: ['ignore', log, log], windowsHide: true,
   }).unref();
 } catch { /* never break the user's session */ }

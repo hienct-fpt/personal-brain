@@ -9,48 +9,48 @@ description: Architecture and code conventions of Personal Brain — use when ad
 
 ```mermaid
 flowchart LR
-  T["~/.claude/projects/**/*.jsonl"] --> I["src/ingest.mjs"]
-  I --> DB[("brain.db<br/>schema: src/lib.mjs")]
-  DB --> Q["src/query.mjs<br/>FTS5 search, project brief"]
+  T["~/.claude/projects/**/*.jsonl"] --> I["src/ingest/ingest.mjs"]
+  I --> DB[("brain.db<br/>schema: src/core/lib.mjs")]
+  DB --> Q["src/query/query.mjs<br/>FTS5 search, project brief"]
   Q --> S["src/server.mjs<br/>JSON API"]
   Q --> M["src/mcp.mjs<br/>MCP stdio, read-only"]
   S --> UI["src/public/index.html<br/>plain JS + SVG"]
-  S --> SM["src/summarize.mjs"] --> P["src/providers.mjs"]
+  S --> SM["src/ai/summarize.mjs"] --> P["src/ai/providers.mjs"]
   H["src/hook-sessionend.mjs"] --> I
 ```
 
 | File | Contains | Change it to |
 | --- | --- | --- |
-| `src/lib.mjs` | config `DEFAULTS`, `SCHEMA`, `openDb()` + migrations, `redact()`, `projectOf()`, `isExcluded()`, `localDay()` | add a config key, table/column, project-naming rule |
-| `src/ingest.mjs` | `listSessions` → `parseSession` (reads JSONL) → `writeSession`; `estimateMissingCosts`; `ingestKnowledge`; `ingest()` | pull more data from transcripts |
-| `src/copilot.mjs` | GitHub Copilot sources: `listCopilotSessions`, `parseCopilotCli` (events.jsonl), `parseCopilotVscode` + `replayChatLog` (VS Code chatSessions); same result shape as `parseSession` + `source`, `lines`, per-message `cost` | read more from Copilot, support a new Copilot format |
-| `src/extensions.mjs` | `scanExtensions()` (skills/agents/commands from user dir, synced, plugins, project `.claude/`), `parseFrontmatter()`, `usageOfToolUse()` | change what counts as a skill/agent/command or its summary |
+| `src/core/lib.mjs` | config `DEFAULTS`, `SCHEMA`, `openDb()` + migrations, `redact()`, `projectOf()`, `isExcluded()`, `localDay()` | add a config key, table/column, project-naming rule |
+| `src/ingest/ingest.mjs` | `listSessions` → `parseSession` (reads JSONL) → `writeSession`; `estimateMissingCosts`; `ingestKnowledge`; `ingest()` | pull more data from transcripts |
+| `src/ingest/copilot.mjs` | GitHub Copilot sources: `listCopilotSessions`, `parseCopilotCli` (events.jsonl), `parseCopilotVscode` + `replayChatLog` (VS Code chatSessions); same result shape as `parseSession` + `source`, `lines`, per-message `cost` | read more from Copilot, support a new Copilot format |
+| `src/ingest/extensions.mjs` | `scanExtensions()` (skills/agents/commands from user dir, synced, plugins, project `.claude/`), `parseFrontmatter()`, `usageOfToolUse()` | change what counts as a skill/agent/command or its summary |
 | `src/kit.mjs`, `src/kit/` | starter kit (sample skills/agents/commands) + `brain kit list/add/remove`; add never overwrites a modified copy, remove only deletes unmodified ones | add/change a sample, change the kit CLI (keep samples generic — public repo) |
 | `src/server.mjs` | query functions `usage()`, `activity()`, `projects()`, `project()`, `search()`, `settings()`; router in `createServer` | add/change an API |
-| `src/query.mjs` | `rebuildSearchIndex()` (FTS5 `search_fts` + `entities`), `search()`, `timeHint()`, `promptNeighbors()`, `resolveProject()`, `projectBrief()`, `recent()`, `extensionsOverview()` — shared by server + MCP | change search / what agents get back |
-| `src/entities.mjs` | regex entity extraction (`extractEntities`), `rebuildEntities()` → table `entities`, `related()` (co-occurrence × idf) for `brain_related` | change what counts as an entity or how relatedness is scored |
+| `src/query/query.mjs` | `rebuildSearchIndex()` (FTS5 `search_fts` + `entities`), `search()`, `timeHint()`, `promptNeighbors()`, `resolveProject()`, `projectBrief()`, `recent()`, `extensionsOverview()` — shared by server + MCP | change search / what agents get back |
+| `src/query/entities.mjs` | regex entity extraction (`extractEntities`), `rebuildEntities()` → table `entities`, `related()` (co-occurrence × idf) for `brain_related` | change what counts as an entity or how relatedness is scored |
 | `src/mcp.mjs` | read-only stdio MCP server: `TOOLS` + handlers `brain_search/brain_related/brain_project/brain_recent/brain_profile`; stdout is for JSON-RPC only | add/change an MCP tool (add a check in `scripts/smoke.mjs`) |
 | `src/public/index.html` | CSS, chart helpers (`stackedBars`, `hBars`, `heatmap`, `sparkline`), views `renderUsage/renderPortfolio/renderProjectDetail/renderSearch/renderSettings`, hash router `route()` | change the UI |
-| `src/summarize.mjs` | `buildContext()` (prompt sent to the AI), result JSON schema, `normalize()`, `summarizeProject()` | change summary content |
-| `src/providers.mjs` | `PROVIDERS` (UI metadata) + `impl` (`listModels`, `generate`) per provider | add a provider |
+| `src/ai/summarize.mjs` | `buildContext()` (prompt sent to the AI), result JSON schema, `normalize()`, `summarizeProject()` | change summary content |
+| `src/ai/providers.mjs` | `PROVIDERS` (UI metadata) + `impl` (`listModels`, `generate`) per provider | add a provider |
 | `scripts/install.mjs` | install/upgrade, hook, MCP registration, `brain` shim | change installation |
 
 ## Recipes for common tasks
 
 **Add a column / table**
-1. Add it to `SCHEMA` in `src/lib.mjs` (new table: `CREATE TABLE IF NOT EXISTS`).
+1. Add it to `SCHEMA` in `src/core/lib.mjs` (new table: `CREATE TABLE IF NOT EXISTS`).
 2. Old DBs: add a migration in `openDb()` following `if (!cols.has('x')) db.exec('ALTER TABLE … ADD COLUMN x …')`.
 3. Write the data in `writeSession()`; if old sessions need it → tell the user to run `brain ingest --full`.
 4. Never `DROP` tables/columns holding user data.
-5. If the data should be searchable, add it to `rebuildSearchIndex()` in `src/query.mjs`.
+5. If the data should be searchable, add it to `rebuildSearchIndex()` in `src/query/query.mjs`.
 
 **Add an API endpoint**
-1. Write the query function in `src/server.mjs` (or `src/query.mjs` if MCP needs it too), using `get`/`all` with `?` parameters — never concatenate input into SQL.
+1. Write the query function in `src/server.mjs` (or `src/query/query.mjs` if MCP needs it too), using `get`/`all` with `?` parameters — never concatenate input into SQL.
 2. Add a router line: GET reads data; POST is blocked automatically unless `trusted()`.
 3. Add a check to `scripts/smoke.mjs`.
 
 **Add an MCP tool**
-1. Add the query to `src/query.mjs`, then an entry in `TOOLS` (name, description, `inputSchema`) and a handler in `HANDLERS` in `src/mcp.mjs`.
+1. Add the query to `src/query/query.mjs`, then an entry in `TOOLS` (name, description, `inputSchema`) and a handler in `HANDLERS` in `src/mcp.mjs`.
 2. Keep it read-only and return compact text (clip long fields — the result goes into Claude's context).
 3. Update the MCP checks in `scripts/smoke.mjs` (tool count, one call per tool) and the tool table in `README.md`.
 
@@ -61,7 +61,7 @@ flowchart LR
 - New route: add a branch in `route()` (hash `#/…`).
 
 **Add a config key**
-1. Default in `DEFAULTS` (`src/lib.mjs`); if it is a path → add it to `PATH_KEYS`.
+1. Default in `DEFAULTS` (`src/core/lib.mjs`); if it is a path → add it to `PATH_KEYS`.
 2. Sample + `_key` comment in `src/config.example.json`.
 3. Config table in `README.md`.
 

@@ -1,12 +1,12 @@
 // Shared helpers: paths, config, DB schema, redaction, project naming.
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 // App directory = install directory. Code, config.json, secrets.json and brain.db all live here.
-export const HOME = dirname(fileURLToPath(import.meta.url));
+export const HOME = resolve(dirname(fileURLToPath(import.meta.url)), '..'); // this file lives in core/
 export const DB_PATH = join(HOME, 'brain.db');
 export const RUNS_DIR = join(HOME, 'runs'); // legacy: cwd of old `claude -p` runs → excluded from ingest
 

@@ -4,8 +4,8 @@ import { createReadStream, readdirSync, statSync, existsSync, readFileSync } fro
 import { createInterface } from 'node:readline';
 import { join, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { openDb, loadConfig, projectOf, isExcluded, redact, localDay, MEMORY_TYPES } from './lib.mjs';
-import { rebuildSearchIndex } from './query.mjs';
+import { openDb, loadConfig, projectOf, isExcluded, redact, localDay, MEMORY_TYPES } from '../core/lib.mjs';
+import { rebuildSearchIndex } from '../query/query.mjs';
 import { ingestExtensions, usageOfToolUse } from './extensions.mjs';
 import { listCopilotSessions, parseCopilotCli, parseCopilotVscode } from './copilot.mjs';
 

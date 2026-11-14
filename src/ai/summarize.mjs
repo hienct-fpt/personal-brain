@@ -2,9 +2,9 @@
 // Requires the provider's API key registered in the dashboard (⚙ Cài đặt) — see secrets.mjs / providers.mjs.
 // Usage: node --no-warnings summarize.mjs "<project>"
 import { pathToFileURL } from 'node:url';
-import { openDb, loadConfig, localDay } from './lib.mjs';
-import { rebuildSearchIndex } from './query.mjs';
-import { getApiKey } from './secrets.mjs';
+import { openDb, loadConfig, localDay } from '../core/lib.mjs';
+import { rebuildSearchIndex } from '../query/query.mjs';
+import { getApiKey } from '../core/secrets.mjs';
 import { PROVIDERS, generateJson, providerReady } from './providers.mjs';
 
 // config.ai (migrates the v0.5 `summary` block on first read)

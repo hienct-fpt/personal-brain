@@ -4,9 +4,9 @@
 import { createInterface } from 'node:readline';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { openDb, loadConfig, projectOf, localDay, HOME } from './lib.mjs';
-import { search, ensureSearchIndex, resolveProject, projectBrief, recent, profile, promptNeighbors, timeHint } from './query.mjs';
-import { related } from './entities.mjs';
+import { openDb, loadConfig, projectOf, localDay, HOME } from './core/lib.mjs';
+import { search, ensureSearchIndex, resolveProject, projectBrief, recent, profile, promptNeighbors, timeHint } from './query/query.mjs';
+import { related } from './query/entities.mjs';
 
 const cfg = loadConfig();
 const db = openDb();

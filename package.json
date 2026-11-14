@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "node --no-warnings src/server.mjs --open",
-    "ingest": "node --no-warnings src/ingest.mjs",
+    "ingest": "node --no-warnings src/ingest/ingest.mjs",
     "check": "node scripts/check.mjs",
     "smoke": "node --no-warnings scripts/smoke.mjs",
     "db": "node --no-warnings scripts/db.mjs",

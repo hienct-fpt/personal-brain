@@ -1,5 +1,5 @@
 // Read-side queries shared by the dashboard server and the MCP server: full-text search (FTS5), project brief, recent work.
-import { localDay, PROFILE_TYPES } from './lib.mjs';
+import { localDay, PROFILE_TYPES } from '../core/lib.mjs';
 import { rebuildEntities } from './entities.mjs';
 
 // unicode61 + remove_diacritics folds "quyết" → "quyet" but treats "đ" as its own letter; fold it ourselves (1:1 chars).

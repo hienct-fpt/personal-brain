@@ -11,8 +11,8 @@
 import { readdirSync, readFileSync, existsSync, statSync, mkdirSync, cpSync, rmSync } from 'node:fs';
 import { join, resolve, dirname, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HOME, loadConfig } from './lib.mjs';
-import { parseFrontmatter } from './extensions.mjs';
+import { HOME, loadConfig } from './core/lib.mjs';
+import { parseFrontmatter } from './ingest/extensions.mjs';
 
 export const KIT_DIR = join(HOME, 'kit');
 const KINDS = [['skill', 'skills'], ['agent', 'agents'], ['command', 'commands']];

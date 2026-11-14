@@ -3,7 +3,7 @@
 // project's .claude/ folder. Each entry gets a deterministic summary: frontmatter description + heading outline.
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
-import { projectOf, isExcluded, redact } from './lib.mjs';
+import { projectOf, isExcluded, redact } from '../core/lib.mjs';
 
 const META_KEYS = ['model', 'tools', 'allowed-tools', 'argument-hint', 'disable-model-invocation', 'user-invocable'];
 

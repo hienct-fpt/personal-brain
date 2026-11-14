@@ -43,7 +43,7 @@ flowchart LR
   DB --> S["server.mjs<br/>127.0.0.1:4377"]
   S --> UI["dashboard<br/>public/index.html"]
   S -->|"on start + every 10 min + ↻ button"| I
-  S -->|"only with an API key"| SM["summarize.mjs"]
+  S -->|"only with an API key"| SM["ai/summarize.mjs"]
   SM --> P["providers.mjs<br/>Claude / OpenAI / Gemini / Azure / OpenAI-compatible"]
   SM -->|"store result"| DB
   DB -->|"read-only"| M["mcp.mjs (stdio)<br/>brain_search / brain_related / brain_project<br/>brain_recent / brain_profile"]
@@ -79,7 +79,7 @@ flowchart TD
 sequenceDiagram
   participant CC as Claude Code
   participant H as hook-sessionend.mjs
-  participant I as ingest.mjs (detached)
+  participant I as ingest/ingest.mjs (detached)
   participant DB as brain.db
   CC->>H: SessionEnd
   H->>I: spawn detached + unref, log → ingest-hook.log
@@ -94,7 +94,7 @@ sequenceDiagram
   actor U as User
   participant UI as Dashboard
   participant S as server.mjs
-  participant SM as summarize.mjs
+  participant SM as ai/summarize.mjs
   participant P as Provider API
   participant DB as brain.db
   U->>UI: click "Tóm tắt" (Summarize)
@@ -138,14 +138,19 @@ Launched by Claude Code per session (`claude mcp add --scope user`). The default
 ```text
 %USERPROFILE%\.personal-brain\
 ├─ config.json          # project grouping, aliases, exclude, summary model/effort/language
-├─ lib.mjs              # paths, config, DB schema + migrations, secret redaction, project names
-├─ ingest.mjs           # transcripts + memory files → brain.db
-├─ copilot.mjs          # GitHub Copilot CLI + VS Code Copilot Chat sources
-├─ extensions.mjs       # skills / agents / slash commands on disk + frontmatter/outline summary
-├─ summarize.mjs        # summarize one project with the selected provider
-├─ providers.mjs        # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
-├─ secrets.mjs          # per-provider API key storage, encrypted with Windows DPAPI
-├─ query.mjs            # shared queries: FTS5 index + search, project brief, recent sessions
+├─ core/
+│  ├─ lib.mjs           # paths, config, DB schema + migrations, secret redaction, project names
+│  └─ secrets.mjs       # per-provider API key storage, encrypted with Windows DPAPI
+├─ ingest/
+│  ├─ ingest.mjs        # transcripts + memory files → brain.db
+│  ├─ copilot.mjs       # GitHub Copilot CLI + VS Code Copilot Chat sources
+│  └─ extensions.mjs    # skills / agents / slash commands on disk + frontmatter/outline summary
+├─ query/
+│  ├─ query.mjs         # shared queries: FTS5 index + search, project brief, recent sessions
+│  └─ entities.mjs      # entity extraction + co-occurrence for brain_related
+├─ ai/
+│  ├─ summarize.mjs     # summarize one project with the selected provider
+│  └─ providers.mjs     # Anthropic (SDK), OpenAI, Gemini, Azure OpenAI, OpenAI-compatible (fetch)
 ├─ server.mjs           # HTTP server + JSON API
 ├─ kit.mjs              # brain kit list|add|remove: copy the starter kit into <project>/.claude or ~/.claude
 ├─ kit/                 # starter kit: skills/ (brain-recall, bugfix-flow, verify-before-done), agents/ (code-reviewer, test-runner, brain-researcher), commands/ (brain, recap, check, commit-msg)
@@ -228,10 +233,10 @@ The number of "Ưu tiên cao" (high priority) tips is shown as a badge on the ta
 
 **"⚙ Cài đặt" (Settings):** register/verify/delete API keys; choose model, effort, summary language.
 
-**Search:** FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive, prefix matching. If no result matches every word, falls back to matching any word. Ranking = bm25 × recency boost: up to 1.5× for an item from today, the boost halving every 60 days (`RECENCY_*` in `src/query.mjs`; items without a timestamp get none). `search()` takes an optional `since`/`until` window; the MCP `brain_search` exposes it as `since`/`until` (`YYYY-MM-DD`, local day, inclusive) or `days` — time-scoped retrieval is one of the hardest abilities in LongMemEval (ICLR 2025).
+**Search:** FTS5 over session titles, prompts, knowledge, AI summaries and skill/agent/command descriptions. Accent-insensitive, prefix matching. If no result matches every word, falls back to matching any word. Ranking = bm25 × recency boost: up to 1.5× for an item from today, the boost halving every 60 days (`RECENCY_*` in `src/query/query.mjs`; items without a timestamp get none). `search()` takes an optional `since`/`until` window; the MCP `brain_search` exposes it as `since`/`until` (`YYYY-MM-DD`, local day, inclusive) or `days` — time-scoped retrieval is one of the hardest abilities in LongMemEval (ICLR 2025).
 
 **Zero-token memory ideas (from Zero-Mem, arXiv 2607.29377)** — all deterministic, no LLM call:
-- *Time cue in the query:* `timeHint()` (`src/query.mjs`) maps phrases like "hôm qua", "tuần trước", "tháng 9", "3 ngày qua", "last month", "2026-10", "ngày 5/10" to a window and strips them from the keywords. Used by `brain_search` only when no explicit `since`/`until`/`days` is given; the tool output states how the cue was read.
+- *Time cue in the query:* `timeHint()` (`src/query/query.mjs`) maps phrases like "hôm qua", "tuần trước", "tháng 9", "3 ngày qua", "last month", "2026-10", "ngày 5/10" to a window and strips them from the keywords. Used by `brain_search` only when no explicit `since`/`until`/`days` is given; the tool output states how the cue was read.
 - *Local span:* prompt hits carry the previous/next prompt of the same session (`promptNeighbors()`), because a prompt alone is often "ok làm đi".
 - *Entity graph:* `brain_related` (`src/entities.mjs`) scores entities co-occurring with the query entity as Σ over shared units of n(e,u)/Σn(u) × ln(1 + N/df(e)) — the share of each unit (Zero-Mem Eq. 4) damped by idf. One hop only; no PageRank, no embeddings (no extra dependency).
 

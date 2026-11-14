@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { redact, expandHome } from './lib.mjs';
+import { redact, expandHome } from '../core/lib.mjs';
 
 const USD_PER_NANO_AIU = 1e-11; // 1e9 nano-AIC = 1 AIC = $0.01
 const CLI_EDIT_TOOLS = new Set(['edit', 'create', 'write']);

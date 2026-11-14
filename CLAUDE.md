@@ -20,7 +20,7 @@ Node >= 22.5, all ES modules (`.mjs`), 1 dependency (`@anthropic-ai/sdk`). No fr
 - Dev runs from `src/` = its own data directory (`src/brain.db`, `src/config.json`, gitignored). **Do not** touch `~/.personal-brain`, `~/.claude/settings.json` or the user's MCP config while developing/testing.
 - Never use port 4377 for testing: that is the dashboard the user is running.
 - The hook (`hook-sessionend.mjs`) always exits 0 and never blocks a session.
-- Any text stored in the DB from prompts/memory must go through `redact()` (`src/lib.mjs`).
+- Any text stored in the DB from prompts/memory must go through `redact()` (`src/core/lib.mjs`).
 - Schema changes: add to `SCHEMA` + an `ALTER TABLE … ADD COLUMN` migration with a column check in `openDb()`; never drop user-data columns/tables.
 - POST APIs must pass `trusted()` (header `x-brain: 1` + Origin). API keys are never returned to the browser.
 - The MCP server (`src/mcp.mjs`) is read-only; stdout is reserved for JSON-RPC (log to stderr).

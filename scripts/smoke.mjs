@@ -115,7 +115,7 @@ ok('GET /api/kit', kitApi.status === 200 && kitApi.body?.length >= 9 && kitApi.b
 {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
-  const { listCopilotSessions, parseCopilotCli, parseCopilotVscode } = await import('../src/copilot.mjs');
+  const { listCopilotSessions, parseCopilotCli, parseCopilotVscode } = await import('../src/ingest/copilot.mjs');
   const tmp = mkdtempSync(join(tmpdir(), 'pb-copilot-'));
   const cliDir = join(tmp, 'copilot', 'session-state', 's1');
   mkdirSync(cliDir, { recursive: true });

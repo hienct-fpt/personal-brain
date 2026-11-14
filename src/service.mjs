@@ -11,7 +11,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { openSync, readFileSync, statSync, truncateSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConfig, HOME } from './lib.mjs';
+import { loadConfig, HOME } from './core/lib.mjs';
 
 const WIN = process.platform === 'win32';
 const port = Number(process.env.BRAIN_PORT ?? loadConfig().port);

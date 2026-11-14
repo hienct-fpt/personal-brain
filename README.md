@@ -181,7 +181,7 @@ Data flow:
 
 ```mermaid
 flowchart LR
-  T["Claude Code transcripts<br/>~/.claude/projects"] --> I["ingest.mjs"]
+  T["Claude Code transcripts<br/>~/.claude/projects"] --> I["ingest/ingest.mjs"]
   CP["Copilot CLI ~/.copilot/session-state<br/>VS Code chatSessions"] -->|"copilot.mjs"| I
   H["SessionEnd hook"] --> I
   I --> DB[("brain.db<br/>+ FTS5 index")]
@@ -244,17 +244,24 @@ Layout:
 
 ```text
 src/
-  lib.mjs              config, DB schema, secret redaction, project naming
-  ingest.mjs           transcripts + memory files → brain.db
-  copilot.mjs          GitHub Copilot sources: Copilot CLI events.jsonl, VS Code chatSessions (.json / .jsonl mutation log)
-  query.mjs            shared queries: FTS5 index + search, project brief, recent sessions
-  server.mjs           HTTP server + API
-  mcp.mjs              read-only MCP server (stdio) for Claude Code
-  service.mjs          brain start|stop|restart|status|autostart
-  summarize.mjs        project summary with the selected provider
-  providers.mjs        Anthropic SDK, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible
-  secrets.mjs          API key storage (DPAPI on Windows)
-  hook-sessionend.mjs  SessionEnd hook → background ingest
+  server.mjs           HTTP server + API                          (entry point)
+  mcp.mjs              read-only MCP server (stdio) for Claude Code (entry point)
+  service.mjs          brain start|stop|restart|status|autostart  (entry point)
+  hook-sessionend.mjs  SessionEnd hook → background ingest        (entry point)
+  kit.mjs, kit/        starter kit: brain kit list|add|remove + its sample files
+  core/
+    lib.mjs            config, DB schema, secret redaction, project naming
+    secrets.mjs        API key storage (DPAPI on Windows)
+  ingest/
+    ingest.mjs         transcripts + memory files → brain.db
+    copilot.mjs        GitHub Copilot sources: Copilot CLI events.jsonl, VS Code chatSessions (.json / .jsonl mutation log)
+    extensions.mjs     skills / agents / slash commands on disk
+  query/
+    query.mjs          shared queries: FTS5 index + search, project brief, recent sessions
+    entities.mjs       entity extraction + co-occurrence for brain_related
+  ai/
+    summarize.mjs      project summary with the selected provider
+    providers.mjs      Anthropic SDK, OpenAI, Gemini, Azure OpenAI, OpenAI-compatible
   public/index.html    dashboard (plain JS + SVG)
   brain.cmd            the brain command
   config.example.json  sample config
